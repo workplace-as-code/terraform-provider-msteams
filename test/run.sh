@@ -19,12 +19,14 @@
 #
 # Optional:
 #   TF_VAR_test_group_id    object ID of an existing group, to test group policy assignments
+#   TF_DEV_PROVIDER_DIR     folder written in a new ~/.terraformrc (default /tmp). When
+#                           ~/.terraformrc already has a dev override for this provider, the
+#                           provider is built into the folder it names.
 
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 TESTDIR="$ROOT/test/integration"
-BINARY="/tmp/terraform-provider-msteams"
 TERRAFORMRC="$HOME/.terraformrc"
 PROVIDER_ADDR="workplace-as-code/msteams"
 
@@ -87,22 +89,27 @@ pass "Credentials OK (tenant: $TEAMS_TENANT_ID)"
 # ---------------------------------------------------------------------------
 # 3. Check ~/.terraformrc dev_overrides
 # ---------------------------------------------------------------------------
-if grep -q "\"$PROVIDER_ADDR\"" "$TERRAFORMRC" 2>/dev/null; then
-  pass "~/.terraformrc already configured"
+# The provider is built into the folder of its dev override, so Terraform
+# always runs the binary built here.
+DEV_DIR="$(sed -n "s#^ *\"$PROVIDER_ADDR\" *= *\"\([^\"]*\)\".*#\1#p" "$TERRAFORMRC" 2>/dev/null | head -1 || true)"
+if [[ -n "$DEV_DIR" ]]; then
+  pass "~/.terraformrc already configured ($DEV_DIR)"
 elif grep -q 'dev_overrides' "$TERRAFORMRC" 2>/dev/null; then
-  fail "~/.terraformrc has dev_overrides but not \"$PROVIDER_ADDR\" = \"/tmp\". Add that line."
+  fail "~/.terraformrc has dev_overrides but no \"$PROVIDER_ADDR\" entry. Add one, for example \"$PROVIDER_ADDR\" = \"/tmp\"."
 else
+  DEV_DIR="${TF_DEV_PROVIDER_DIR:-/tmp}"
   step "Configuring ~/.terraformrc dev_overrides"
   cat > "$TERRAFORMRC" <<RC
 provider_installation {
   dev_overrides {
-    "$PROVIDER_ADDR" = "/tmp"
+    "$PROVIDER_ADDR" = "$DEV_DIR"
   }
   direct {}
 }
 RC
-  pass "~/.terraformrc created"
+  pass "~/.terraformrc created ($DEV_DIR)"
 fi
+BINARY="$DEV_DIR/terraform-provider-msteams"
 
 # ---------------------------------------------------------------------------
 # 4. Build provider binary
