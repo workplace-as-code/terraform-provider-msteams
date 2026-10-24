@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.1.1 (Unreleased)
+
+### Bug fixes
+
+- Certificate authentication with a `.pfx` file works on macOS: loading the certificate failed with "This platform does not support loading with EphemeralKeySet".
+
 ## 0.1.0 (October 24, 2026)
 
 First release.
