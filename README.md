@@ -104,19 +104,12 @@ The PowerShell bridge scripts are embedded in the provider binary: nothing else 
 
 ---
 
-## Architecture
-
-```
-Terraform ──▶ Go provider (Plugin Framework) ──▶ pwsh + embedded bridge scripts ──▶ MicrosoftTeams module ──▶ Teams
-```
-
----
-
 ## Documentation
 
 - [Getting Started](docs/guides/getting_started.md)
 - [Authentication](docs/guides/authentication.md)
 - [Import an existing tenant](docs/guides/import_existing.md)
+- [Detect drift in CI](docs/guides/drift_detection.md)
 - [All Resources](docs/resources/)
 
 ---
