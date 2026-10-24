@@ -114,4 +114,4 @@ The first operation takes longer because the provider loads the MicrosoftTeams m
 
 - [Import an existing tenant](https://registry.terraform.io/providers/workplace-as-code/msteams/latest/docs/guides/import_existing): generate the configuration of the policies and settings already in place.
 - Assign policies to groups with `msteams_group_policy_assignment`. Assigning policies to individual users is not managed by the provider yet.
-- Run `terraform plan` on a schedule to detect changes made in the Teams admin center.
+- [Detect drift in CI](https://registry.terraform.io/providers/workplace-as-code/msteams/latest/docs/guides/drift_detection): run `terraform plan` on a schedule to detect changes made in the Teams admin center.
