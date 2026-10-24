@@ -11,6 +11,8 @@ The Microsoft Teams provider manages Teams policies, policy assignments, externa
 - PowerShell 7+ (`pwsh`) with the MicrosoftTeams module: `Install-Module MicrosoftTeams -Scope CurrentUser`
 - An Entra ID app registration with a certificate, the `Organization.Read.All` Graph application permission and the Teams Administrator role. See the [Authentication guide](https://registry.terraform.io/providers/workplace-as-code/msteams/latest/docs/guides/authentication).
 
+When something fails, start with the [Troubleshooting guide](https://registry.terraform.io/providers/workplace-as-code/msteams/latest/docs/guides/troubleshooting).
+
 ## Example Usage
 
 {{ tffile "examples/provider/provider.tf" }}

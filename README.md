@@ -110,6 +110,7 @@ The PowerShell bridge scripts are embedded in the provider binary: nothing else 
 - [Authentication](docs/guides/authentication.md)
 - [Import an existing tenant](docs/guides/import_existing.md)
 - [Detect drift in CI](docs/guides/drift_detection.md)
+- [Troubleshooting](docs/guides/troubleshooting.md)
 - [All Resources](docs/resources/)
 
 ---

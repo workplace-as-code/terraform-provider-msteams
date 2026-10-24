@@ -130,3 +130,7 @@ For a single administrator testing on one tenant, one write app is enough.
 ## Storing Secrets Safely
 
 Never commit the `.pfx` file or its password. Inject them at run time from your CI secret store (GitHub Actions secrets, Azure Key Vault, HashiCorp Vault, HCP Terraform sensitive variables).
+
+## Troubleshooting
+
+Connection errors (`AADSTS` codes), certificate and permission problems are covered in the [Troubleshooting guide](https://registry.terraform.io/providers/workplace-as-code/msteams/latest/docs/guides/troubleshooting).
