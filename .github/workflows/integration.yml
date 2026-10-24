@@ -41,6 +41,14 @@ jobs:
         shell: pwsh
         run: |
           Install-PSResource -Name MicrosoftTeams -Scope CurrentUser -TrustRepository -Quiet
+
+      # The release checklist copies these versions into the tested versions
+      # table of the documentation (templates/index.md.tmpl).
+      - name: Show the tested versions
+        shell: pwsh
+        run: |
+          terraform version
+          "PowerShell $($PSVersionTable.PSVersion)"
           Get-Module -ListAvailable MicrosoftTeams | Select-Object Name, Version | Format-Table
 
       - name: Write the certificate

@@ -11,6 +11,8 @@ The Microsoft Teams provider manages Teams policies, policy assignments, externa
 - PowerShell 7+ (`pwsh`) with the MicrosoftTeams module: `Install-Module MicrosoftTeams -Scope CurrentUser`
 - An Entra ID app registration with a certificate, the `Organization.Read.All` Graph application permission and the Teams Administrator role. See the [Authentication guide](https://registry.terraform.io/providers/workplace-as-code/msteams/latest/docs/guides/authentication).
 
+When something fails, start with the [Troubleshooting guide](https://registry.terraform.io/providers/workplace-as-code/msteams/latest/docs/guides/troubleshooting).
+
 ## Example Usage
 
 ```terraform
@@ -62,3 +64,13 @@ The provider keeps a few PowerShell processes open during a run and reuses their
 | `TEAMS_BRIDGE_MODE` | `persistent` | `oneshot` starts a new PowerShell process for every call |
 | `TEAMS_WORKER_MAX_REQUESTS` | `200` | Requests served by a PowerShell process before it is replaced |
 | `TEAMS_BRIDGE_DIR` | unset | Run the bridge scripts from this folder instead of the embedded copy (script development only) |
+
+## Tested versions
+
+Before each release, the integration tests create, update, import and destroy every resource type on a real tenant with these versions:
+
+| Provider | Terraform | PowerShell | MicrosoftTeams module | Operating system |
+|---|---|---|---|---|
+| 0.1.1 | 1.17.0 | 7.6.8 | 8.0.0 | Linux (Debian 13) |
+
+Other versions that meet the requirements (Terraform 1.5 or later, PowerShell 7 or later) should work but are not tested. `terraform query` needs Terraform 1.14 or later.
