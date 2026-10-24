@@ -2,8 +2,9 @@
 
 Manage Microsoft Teams policies and tenant-wide settings as code with Terraform.
 
+[![CI](https://github.com/workplace-as-code/terraform-provider-msteams/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/workplace-as-code/terraform-provider-msteams/actions/workflows/ci.yml)
+[![Terraform Registry](https://img.shields.io/github/v/release/workplace-as-code/terraform-provider-msteams?label=registry&logo=terraform&color=7B42BC)](https://registry.terraform.io/providers/workplace-as-code/msteams/latest)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![Terraform Registry](https://img.shields.io/badge/registry-workplace--as--code%2Fmsteams-7B42BC?logo=terraform)](https://registry.terraform.io/providers/workplace-as-code/msteams)
 
 - Review every change with `terraform plan` before it reaches the tenant
 - Detect changes made in the Teams admin center
