@@ -1,0 +1,41 @@
+---
+page_title: "{{.Name}} ({{.Type}}) - {{.ProviderName}}"
+subcategory: "Tenant settings"
+description: |-
+{{ .Description | plainmarkdown | trimspace | prefixlines "  " }}
+---
+
+# {{.Name}} ({{.Type}})
+
+{{ .Description | trimspace }}
+
+## Example Usage
+
+{{ tffile .ExampleFile }}
+
+{{ .SchemaMarkdown | trimspace }}
+
+## Permissions
+
+The provider's app registration needs the **Teams Administrator** Entra ID role. See the [Authentication guide](https://registry.terraform.io/providers/workplace-as-code/msteams/latest/docs/guides/authentication).
+
+## Microsoft documentation
+
+- [`Get-CsTeamsGuestCallingConfiguration`](https://learn.microsoft.com/powershell/module/msteams/get-csteamsguestcallingconfiguration?view=teams-ps)
+- [`Set-CsTeamsGuestCallingConfiguration`](https://learn.microsoft.com/powershell/module/msteams/set-csteamsguestcallingconfiguration?view=teams-ps)
+
+## Import
+
+The resource is a singleton. Import it with the ID `Global`:
+
+{{ tffile .ImportIDConfigFile }}
+
+Or by identity (Terraform 1.12 and later):
+
+{{ tffile .ImportIdentityConfigFile }}
+
+Or with the CLI:
+
+{{ codefile "shell" .ImportFile }}
+
+To import every existing object at once, see [Import an existing tenant](https://registry.terraform.io/providers/workplace-as-code/msteams/latest/docs/guides/import_existing).

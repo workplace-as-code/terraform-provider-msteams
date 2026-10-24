@@ -1,0 +1,1 @@
+terraform import msteams_guest_messaging_configuration.this "Global"

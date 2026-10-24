@@ -1,0 +1,20 @@
+---
+page_title: "{{.Name}} (List Resource) - {{.ProviderName}}"
+subcategory: ""
+description: |-
+  Lists the existing {{.Name}} objects, for terraform query.
+---
+
+# {{.Name}} (List Resource)
+
+{{ .Description | trimspace }}
+
+Each result is an object that the [`{{.Name}}`](https://registry.terraform.io/providers/workplace-as-code/msteams/latest/docs/resources/{{ index (split .Name (printf "%s_" .ProviderShortName)) 1 }}) resource can import. `terraform query -generate-config-out=generated.tf` writes the resource and `import` blocks of every result: see [Import an existing tenant](https://registry.terraform.io/providers/workplace-as-code/msteams/latest/docs/guides/import_existing).
+
+## Example Usage
+
+```terraform
+list "{{.Name}}" "all" {
+  provider = {{.ProviderShortName}}
+}
+```

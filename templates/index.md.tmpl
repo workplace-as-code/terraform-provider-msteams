@@ -1,0 +1,32 @@
+---
+page_title: "Provider: Microsoft Teams"
+description: |-
+  Manage Microsoft Teams policies, policy assignments, external and guest access, and tenant settings as code.
+---
+
+# Microsoft Teams Provider
+
+The Microsoft Teams provider manages Teams policies, policy assignments, external and guest access, and tenant-wide settings as code. It drives the MicrosoftTeams PowerShell module through scripts embedded in the provider binary. The machine running Terraform needs:
+
+- PowerShell 7+ (`pwsh`) with the MicrosoftTeams module: `Install-Module MicrosoftTeams -Scope CurrentUser`
+- An Entra ID app registration with a certificate, the `Organization.Read.All` Graph application permission and the Teams Administrator role. See the [Authentication guide](https://registry.terraform.io/providers/workplace-as-code/msteams/latest/docs/guides/authentication).
+
+## Example Usage
+
+{{ tffile "examples/provider/provider.tf" }}
+
+Every argument can also come from a `TEAMS_*` environment variable, for example `TEAMS_TENANT_ID`. A value set in the provider block takes precedence over the environment.
+
+{{ .SchemaMarkdown | trimspace }}
+
+## Performance tuning
+
+The provider keeps a few PowerShell processes open during a run and reuses their Teams connection. These environment variables tune that behavior:
+
+| Variable | Default | Effect |
+|---|---|---|
+| `TEAMS_MAX_CONCURRENCY` | `4` | Maximum number of PowerShell processes running at once |
+| `TEAMS_SCRIPT_TIMEOUT` | `10m` | Maximum duration of one bridge call |
+| `TEAMS_BRIDGE_MODE` | `persistent` | `oneshot` starts a new PowerShell process for every call |
+| `TEAMS_WORKER_MAX_REQUESTS` | `200` | Requests served by a PowerShell process before it is replaced |
+| `TEAMS_BRIDGE_DIR` | unset | Run the bridge scripts from this folder instead of the embedded copy (script development only) |

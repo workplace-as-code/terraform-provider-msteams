@@ -1,0 +1,1 @@
+terraform import msteams_tenant_federation_configuration.this "Global"

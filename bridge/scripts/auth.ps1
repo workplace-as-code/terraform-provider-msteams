@@ -1,0 +1,79 @@
+# auth.ps1 — Teams authentication via the MicrosoftTeams PowerShell module
+# Dot-sourced by all bridge/scripts scripts.
+#
+# RUNTIME REQUIREMENTS:
+#   pwsh (PowerShell 7+) and the MicrosoftTeams module (Install-Module MicrosoftTeams)
+#
+# App-only CBA: the app registration needs the Microsoft Graph application
+# permission Organization.Read.All (admin consent) and the Teams Administrator
+# Entra role. That is enough for the *-Cs* cmdlets used by this provider.
+
+param(
+    [string]$TenantId              = "",
+    [string]$ClientId              = "",
+    [string]$CertificatePath       = "",
+    [string]$CertificatePassword   = "",
+    [string]$CertificateThumbprint = "",
+    [string]$Environment           = "global"
+)
+
+Set-StrictMode -Version Latest
+$ErrorActionPreference = "Stop"
+
+# The connection runs in a child scope. This file is dot-sourced into every
+# bridge script: a variable assigned here would overwrite the script's own
+# parameter of the same name, without regard to case (msexchangeserver once
+# created a transport rule named after the Exchange snap-in this way).
+& {
+    param([string]$TenantId, [string]$ClientId, [string]$CertificatePath, [string]$CertificatePassword, [string]$CertificateThumbprint, [string]$Environment)
+
+    # The certificate password is passed by the Go client through the environment,
+    # never on the command line (command lines are visible to every local user and
+    # are logged by process-creation auditing). An explicit parameter still wins,
+    # for manual testing.
+    if (-not $CertificatePassword -and $env:TEAMS_BRIDGE_CERTIFICATE_PASSWORD) { $CertificatePassword = $env:TEAMS_BRIDGE_CERTIFICATE_PASSWORD }
+
+    # Commercial and GCC tenants use the default endpoints.
+    $teamsEnvironments = @{
+        "global"  = ""
+        "gcc"     = ""
+        "gcchigh" = "TeamsGCCH"
+        "dod"     = "TeamsDOD"
+    }
+    if (-not $teamsEnvironments.ContainsKey($Environment)) {
+        throw "Invalid environment: '$Environment'. Valid values: global, gcc, gcchigh, dod"
+    }
+
+    # Skip if this process is already connected. With the persistent bridge host,
+    # one PowerShell process serves many requests and reuses the first connection.
+    if (Get-Variable -Name TeamsBridgeConnected -Scope Global -ErrorAction SilentlyContinue) { return }
+
+    if (-not $ClientId) { throw "client_id is required" }
+    if (-not $TenantId) { throw "tenant_id is required" }
+
+    $connectParams = @{
+        TenantId      = $TenantId
+        ApplicationId = $ClientId
+    }
+    if ($teamsEnvironments[$Environment]) { $connectParams["TeamsEnvironmentName"] = $teamsEnvironments[$Environment] }
+
+    if ($CertificateThumbprint) {
+        # Windows certificate store — thumbprint lookup
+        $connectParams["CertificateThumbprint"] = $CertificateThumbprint
+    } else {
+        # PFX file — works on Linux/macOS; EphemeralKeySet avoids writing to the key store
+        if (-not $CertificatePath) { throw "Either certificate_path or certificate_thumbprint is required" }
+        $connectParams["Certificate"] = [System.Security.Cryptography.X509Certificates.X509Certificate2]::new(
+            $CertificatePath,
+            $CertificatePassword,
+            [System.Security.Cryptography.X509Certificates.X509KeyStorageFlags]::EphemeralKeySet
+        )
+    }
+
+    try {
+        Connect-MicrosoftTeams @connectParams | Out-Null
+    } catch {
+        throw "Failed to connect to Microsoft Teams: $_"
+    }
+    $global:TeamsBridgeConnected = $true
+} $TenantId $ClientId $CertificatePath $CertificatePassword $CertificateThumbprint $Environment

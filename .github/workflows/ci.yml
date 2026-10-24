@@ -1,0 +1,117 @@
+name: CI
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build & Test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Setup Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Check formatting
+        run: |
+          unformatted=$(gofmt -l .)
+          if [ -n "$unformatted" ]; then
+            echo "Run 'make fmt'. Unformatted files:"; echo "$unformatted"; exit 1
+          fi
+
+      - name: Check go.mod is tidy
+        run: go mod tidy && git diff --exit-code go.mod go.sum
+
+      - name: Build
+        run: go build ./...
+
+      - name: Vet
+        run: go vet ./...
+
+      - name: Unit tests
+        run: go test ./... -race -timeout 120s
+
+      - name: Lint
+        uses: golangci/golangci-lint-action@ba0d7d2ec06a0ea1cb5fa41b2e4a3ab91d21278a # v9.3.0
+        with:
+          # Pinned: "latest" moves to new major versions that the action may not
+          # support. The binary must be built with a Go version >= the one in go.mod
+          # (v2.5 is built with Go 1.25).
+          version: v2.5
+
+  terraform:
+    name: Terraform examples format
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4.0.1
+      - run: terraform fmt -check -recursive examples test/integration
+
+  examples:
+    name: Terraform examples validate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache: true
+      - uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4.0.1
+      - name: Build the provider and point Terraform at it
+        run: |
+          go build -o "$RUNNER_TEMP/bin/terraform-provider-msteams" .
+          cat > "$HOME/.terraformrc" <<RC
+          provider_installation {
+            dev_overrides {
+              "workplace-as-code/msteams" = "$RUNNER_TEMP/bin"
+            }
+            direct {}
+          }
+          RC
+      - name: Validate every example against the current schema
+        run: ./test/validate_examples.sh
+
+  docs:
+    name: Documentation is up to date
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache: true
+      - uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4.0.1
+        with:
+          terraform_wrapper: false
+      - name: Generate docs/ and fail if it differs from the committed version
+        run: |
+          make docs
+          if [ -n "$(git status --porcelain docs)" ]; then
+            git status --short docs
+            echo "::error::docs/ is out of date: run 'make docs' and commit the result."; exit 1
+          fi
+
+  powershell:
+    name: PowerShell syntax
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Parse every bridge script
+        shell: pwsh
+        run: |
+          $failed = $false
+          foreach ($f in Get-ChildItem bridge/scripts/*.ps1) {
+            $errs = $null; $tok = $null
+            [System.Management.Automation.Language.Parser]::ParseFile($f.FullName, [ref]$tok, [ref]$errs) | Out-Null
+            foreach ($e in $errs) { Write-Host "$($f.Name):$($e.Extent.StartLineNumber) $($e.Message)"; $failed = $true }
+          }
+          if ($failed) { exit 1 }
