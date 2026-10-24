@@ -1,0 +1,90 @@
+name: Integration tests
+
+# Runs test/run.sh against the test tenant: every policy is created, updated,
+# imported, listed with terraform query and destroyed.
+# The credentials live in the "integration" environment, which only main can
+# use: a pull request never reaches them, even if it changes this file.
+on:
+  schedule:
+    - cron: "0 2 * * 0" # Sundays at 02:00 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# One run at a time: two runs would fight over the same test policies.
+concurrency:
+  group: integration
+  cancel-in-progress: false
+
+jobs:
+  integration:
+    name: Integration tests
+    runs-on: ubuntu-latest
+    environment: integration
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+
+      - uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4.0.1
+        with:
+          # run.sh reads terraform's output: no wrapper around the binary
+          terraform_wrapper: false
+
+      # Latest version on purpose: the run must catch a module update that
+      # breaks the provider before users do.
+      - name: Install the MicrosoftTeams module
+        shell: pwsh
+        run: |
+          Install-PSResource -Name MicrosoftTeams -Scope CurrentUser -TrustRepository -Quiet
+          Get-Module -ListAvailable MicrosoftTeams | Select-Object Name, Version | Format-Table
+
+      - name: Write the certificate
+        env:
+          PFX_B64: ${{ secrets.TEAMS_CERTIFICATE_PFX_B64 }}
+        run: |
+          umask 077
+          echo "$PFX_B64" | base64 -d > "$RUNNER_TEMP/teams.pfx"
+
+      - name: Run the integration suite
+        env:
+          TEAMS_TENANT_ID: ${{ secrets.TEAMS_TENANT_ID }}
+          TEAMS_CLIENT_ID: ${{ secrets.TEAMS_CLIENT_ID }}
+          TEAMS_CERTIFICATE_PATH: ${{ runner.temp }}/teams.pfx
+          TEAMS_CERTIFICATE_PASSWORD: ${{ secrets.TEAMS_CERTIFICATE_PASSWORD }}
+          TF_VAR_test_group_id: ${{ vars.TF_VAR_TEST_GROUP_ID }}
+        run: ./test/run.sh
+
+      - name: Remove the certificate
+        if: always()
+        run: rm -f "$RUNNER_TEMP/teams.pfx"
+
+  # A failed scheduled run opens an issue, or comments on the one already open.
+  report:
+    name: Report a failure
+    needs: integration
+    if: failure() && github.event_name == 'schedule'
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+    steps:
+      - name: Open or update the failure issue
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          gh label create integration-failure --color B60205 \
+            --description "Scheduled integration tests failed" 2>/dev/null || true
+          issue=$(gh issue list --label integration-failure --state open --json number --jq '.[0].number')
+          if [ -n "$issue" ]; then
+            gh issue comment "$issue" --body "Failed again: $RUN_URL"
+          else
+            gh issue create --label integration-failure \
+              --title "Scheduled integration tests failed" \
+              --body "The weekly integration run failed: $RUN_URL"
+          fi
