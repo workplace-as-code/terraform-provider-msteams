@@ -15,7 +15,7 @@ Open an issue using the [new resource template](.github/ISSUE_TEMPLATE/new_resou
 1. Fork the repository
 2. Create a feature branch: `git checkout -b feat/msteams_my_resource`
 3. Make your changes
-4. Run tests: `make test`, then `test/run.sh` against a test tenant (see the script header for the required `TEAMS_*` variables)
+4. Run tests: `make test`, then `test/run.sh` against a test tenant (see the script header for the required `TEAMS_*` variables). The maintainers also run `test/run.sh` every week on `main` (`.github/workflows/integration.yml`).
 5. Format code: `make fmt`
 6. Regenerate the documentation: `make docs` (never edit `docs/` by hand)
 7. Submit a pull request
