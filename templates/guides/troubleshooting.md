@@ -82,7 +82,7 @@ The steps to create the app registration and the certificate are in the [Authent
 
 1. The app has the **Teams Administrator** role: **Entra ID → Roles and administrators → Teams Administrator → Assignments**. A new assignment can take up to 30 minutes to apply.
 2. **Admin consent** is granted for the `Organization.Read.All` Graph application permission (**API permissions**, status column).
-3. `terraform apply` does not use the read-only app: an app with Global Reader can plan, but not change the tenant.
+3. `terraform apply` does not use the read-only app: an app with Teams Reader can plan, but not change the tenant (`Forbidden`).
 
 **`msteams_group_policy_assignment` fails on a group** although the role is assigned. When the Teams Administrator role of the app is scoped to administrative units, the app also needs the Microsoft Graph `GroupMember.Read.All` application permission, with admin consent.
 
