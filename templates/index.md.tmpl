@@ -6,6 +6,8 @@ description: |-
 
 # Microsoft Teams Provider
 
+~> **Use at your own risk.** This is a community project, maintained on a best-effort basis and provided as is, without warranty (MIT license). Each release is tested by hand on a test tenant before it is published; nothing is tested continuously against Microsoft 365. Run `terraform plan` and try your configuration on a non-production tenant before applying it to production.
+
 The Microsoft Teams provider manages Teams policies, policy assignments, external and guest access, and tenant-wide settings as code. It drives the MicrosoftTeams PowerShell module through scripts embedded in the provider binary. The machine running Terraform needs:
 
 - PowerShell 7+ (`pwsh`) with the MicrosoftTeams module: `Install-Module MicrosoftTeams -Scope CurrentUser`
