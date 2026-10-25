@@ -65,7 +65,7 @@ Secrets reach `auth.ps1` through environment variables, never through parameters
 
 ## Commit Convention
 
-We use [Conventional Commits](https://www.conventionalcommits.org/):
+We use [Conventional Commits](https://www.conventionalcommits.org/). Pull requests are squash-merged, so the pull request title becomes the commit message, and then a line of the release notes: write it for the people who use the provider.
 
 ```
 feat: add msteams_meeting_policy resource
@@ -86,8 +86,7 @@ For maintainers. Each step goes through a pull request, except the tag.
    pwsh -NoProfile -Command '$PSVersionTable.PSVersion; Get-Module -ListAvailable MicrosoftTeams | Select-Object Name, Version'
    ```
 
-3. In `CHANGELOG.md`, rename "Unreleased" to the version and the date, for example `## 0.1.2 (November 3, 2026)`.
-4. Merge the pull request, then tag `main` and push the tag:
+3. Merge the pull request, then tag `main` and push the tag:
 
    ```bash
    git switch main && git pull --ff-only
@@ -95,7 +94,7 @@ For maintainers. Each step goes through a pull request, except the tag.
    git push origin v0.1.2
    ```
 
-5. The **Release** workflow builds, signs and publishes the release. Check that the Terraform Registry shows the new version a few minutes later.
+4. The **Release** workflow builds, signs and publishes the release, with release notes generated from the titles of the pull requests merged since the previous tag (`feat` → Features, `fix` → Bug fixes, `docs` → Documentation; `release`, `ci` and `test` are left out). Read them on the release page and edit them there if needed. Check that the Terraform Registry shows the new version a few minutes later.
 
 ## Code of Conduct
 
