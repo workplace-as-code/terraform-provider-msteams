@@ -51,5 +51,28 @@ release:
     - glob: 'terraform-registry-manifest.json'
       name_template: '{{ .ProjectName }}_{{ .Version }}_manifest.json'
 
+# Release notes, generated from the commits since the previous tag. Pull requests
+# are squash-merged, so each commit title is a pull request title, which the PR
+# title workflow keeps in Conventional Commits form.
 changelog:
-  disable: true
+  use: github
+  # One line per pull request: its title, which ends with the PR number (#n)
+  format: '{{ .Message }}'
+  groups:
+    - title: Features
+      regexp: '^feat(\(.+\))?!?:'
+      order: 0
+    - title: Bug fixes
+      regexp: '^fix(\(.+\))?!?:'
+      order: 1
+    - title: Documentation
+      regexp: '^docs(\(.+\))?!?:'
+      order: 2
+    - title: Other changes
+      order: 999
+  filters:
+    # Release commits, CI and tests change nothing for users
+    exclude:
+      - '^release(\(.+\))?!?:'
+      - '^ci(\(.+\))?!?:'
+      - '^test(\(.+\))?!?:'
