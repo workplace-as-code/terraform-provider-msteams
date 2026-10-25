@@ -120,10 +120,12 @@ provider "msteams" {
 
 | App | Used by | Permissions |
 |---|---|---|
-| `terraform-msteams-read` | `terraform plan` on pull requests, scheduled drift detection | `Organization.Read.All` + the **Global Reader** Entra role |
+| `terraform-msteams-read` | `terraform plan` on pull requests, scheduled drift detection | `Organization.Read.All` + the **Teams Reader** Entra role |
 | `terraform-msteams` | `terraform apply`, only from the protected branch after approval | `Organization.Read.All` + the **Teams Administrator** Entra role |
 
-If the read certificate leaks from a CI job, the configuration can be read but not changed. Keep the write certificate in a secret scoped to the deployment environment (for example a GitHub Actions environment with required reviewers). Check that every resource you manage can be read with Global Reader in your tenant before relying on the read app for drift detection.
+Teams Reader can read the whole Teams configuration and nothing outside Teams, unlike Global Reader, which reads the entire tenant. With app-only certificate authentication, it lets the `Get-Cs*` cmdlets read policies, while `Set-Cs*` cmdlets are refused with `Forbidden`.
+
+If the read certificate leaks from a CI job, the Teams configuration can be read but not changed. Keep the write certificate in a secret scoped to the deployment environment (for example a GitHub Actions environment with required reviewers). Check that every resource you manage can be read with Teams Reader in your tenant before relying on the read app for drift detection.
 
 For a single administrator testing on one tenant, one write app is enough.
 
