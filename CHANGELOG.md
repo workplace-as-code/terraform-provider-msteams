@@ -7,6 +7,7 @@
 - New guides: troubleshooting (installation, PowerShell module, `AADSTS` connection errors, permissions, timeouts, running a bridge script by hand) and drift detection in CI.
 - The provider page lists the Terraform, PowerShell and MicrosoftTeams module versions each release was tested with.
 - The authentication guide recommends the Teams Reader role instead of Global Reader for a read-only app: it reads the Teams configuration only.
+- The README and the provider page state that the provider is a community project, provided as is and tested by hand before each release.
 
 ## 0.1.1 (October 24, 2026)
 

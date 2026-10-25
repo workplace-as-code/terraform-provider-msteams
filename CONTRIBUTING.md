@@ -15,7 +15,7 @@ Open an issue using the [new resource template](.github/ISSUE_TEMPLATE/new_resou
 1. Fork the repository
 2. Create a feature branch: `git checkout -b feat/msteams_my_resource`
 3. Make your changes
-4. Run tests: `make test`, then `test/run.sh` against a test tenant (see the script header for the required `TEAMS_*` variables). The maintainers also run `test/run.sh` every week on `main` (`.github/workflows/integration.yml`).
+4. Run tests: `make test`, then `test/run.sh` against a test tenant (see the script header for the required `TEAMS_*` variables).
 5. Format code: `make fmt`
 6. Regenerate the documentation: `make docs` (never edit `docs/` by hand)
 7. Submit a pull request
@@ -78,8 +78,14 @@ chore: bump terraform-plugin-framework to 1.6.0
 
 For maintainers. Each step goes through a pull request, except the tag.
 
-1. Run the **Integration tests** workflow on `main` (Actions → Integration tests → Run workflow) and wait for it to pass.
-2. Copy the versions printed by its **Show the tested versions** step into the tested versions table of `templates/index.md.tmpl`, then run `make docs`.
+1. Run `test/run.sh` against the test tenant from the code of `main` (see the script header for the variables) and wait for it to pass.
+2. Note the versions it ran with, and copy them into the tested versions table of `templates/index.md.tmpl`, then run `make docs`:
+
+   ```bash
+   terraform version
+   pwsh -NoProfile -Command '$PSVersionTable.PSVersion; Get-Module -ListAvailable MicrosoftTeams | Select-Object Name, Version'
+   ```
+
 3. In `CHANGELOG.md`, rename "Unreleased" to the version and the date, for example `## 0.1.2 (November 3, 2026)`.
 4. Merge the pull request, then tag `main` and push the tag:
 
