@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io/fs"
 	"os"
@@ -54,6 +55,8 @@ func TestHelperFakeHost(t *testing.T) {
 		case "noise.ps1":
 			fmt.Println("WARNING: text written straight to the console")
 			send(hostResponse{ID: req.ID, Stdout: `{"ok":true}`})
+		case "token.ps1":
+			send(hostResponse{ID: req.ID, Stdout: fmt.Sprintf("%d %s", os.Getpid(), os.Getenv(EnvBridgeGraphToken)+"+"+os.Getenv(EnvBridgeTeamsToken))})
 		case "secret.ps1":
 			send(hostResponse{ID: req.ID, Stdout: os.Getenv(EnvBridgeCertificatePassword)})
 		default: // echo: report the process id so tests can check reuse
@@ -195,6 +198,79 @@ func TestPoolPassesSecretsThroughEnvironment(t *testing.T) {
 	_, args := c.hostArgs()
 	if strings.Contains(strings.Join(args, " "), "pfx-secret") {
 		t.Fatal("secret leaked into the host command line")
+	}
+}
+
+func TestPoolRecyclesWorkerBeforeTokenExpiry(t *testing.T) {
+	c := fakeHostClient(t, 1, 100, time.Minute)
+	c.config.TokenSource = &fakeTokenSource{tokens: []AccessTokens{
+		{Graph: "g-1", Teams: "t-1", ExpiresOn: time.Now().Add(2 * time.Minute)}, // inside the recycle margin
+		{Graph: "g-2", Teams: "t-2", ExpiresOn: time.Now().Add(time.Hour)},
+	}}
+	first, err := run(t, c, "token.ps1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := run(t, c, "token.ps1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if pidOf(t, first) == pidOf(t, second) {
+		t.Fatal("the worker whose token expires soon was reused")
+	}
+	if !strings.HasSuffix(second, " g-2+t-2") {
+		t.Fatalf("the new worker did not get the new token: %q", second)
+	}
+}
+
+// An identity endpoint can return a cached token that already expires within
+// the recycle margin. A new worker would get the same token: replacing the
+// worker before each request would only restart PowerShell again and again.
+func TestPoolKeepsWorkerWhenNoNewerToken(t *testing.T) {
+	c := fakeHostClient(t, 1, 100, time.Minute)
+	c.config.TokenSource = &fakeTokenSource{tokens: []AccessTokens{{Graph: "g-1", Teams: "t-1", ExpiresOn: time.Now().Add(time.Minute)}}}
+	first, err := run(t, c, "token.ps1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i := 0; i < 3; i++ {
+		out, err := run(t, c, "token.ps1")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if pidOf(t, out) != pidOf(t, first) {
+			t.Fatalf("request %d restarted the worker although no newer token exists", i)
+		}
+	}
+}
+
+func TestPoolKeepsWorkerWhileTokenIsValid(t *testing.T) {
+	c := fakeHostClient(t, 1, 100, time.Minute)
+	c.config.TokenSource = &fakeTokenSource{tokens: []AccessTokens{{Graph: "g-1", Teams: "t-1", ExpiresOn: time.Now().Add(time.Hour)}}}
+	first, _ := run(t, c, "token.ps1")
+	for i := 0; i < 3; i++ {
+		out, err := run(t, c, "token.ps1")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if pidOf(t, out) != pidOf(t, first) {
+			t.Fatalf("request %d ran in a new process", i)
+		}
+	}
+}
+
+func TestPoolTokenErrorIsReported(t *testing.T) {
+	c := fakeHostClient(t, 1, 100, time.Minute)
+	source := &fakeTokenSource{err: errors.New("AADSTS70021: no matching federated identity record")}
+	c.config.TokenSource = source
+	_, err := run(t, c, "token.ps1")
+	if err == nil || !strings.Contains(err.Error(), "AADSTS70021") {
+		t.Fatalf("err = %v", err)
+	}
+	select {
+	case <-c.pool.idle:
+		t.Fatal("a worker was started without a token")
+	default:
 	}
 }
 

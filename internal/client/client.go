@@ -11,6 +11,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -26,7 +27,36 @@ import (
 // by every local user (ps, /proc/<pid>/cmdline) and are recorded by Windows
 // process-creation auditing (event 4688) and by most EDR agents. A child
 // process environment is only readable by the same user or an administrator.
-const EnvBridgeCertificatePassword = "TEAMS_BRIDGE_CERTIFICATE_PASSWORD"
+const (
+	EnvBridgeCertificatePassword = "TEAMS_BRIDGE_CERTIFICATE_PASSWORD"
+	// EnvBridgeCertificateBase64 carries the content of the .pfx file, base64-encoded.
+	EnvBridgeCertificateBase64 = "TEAMS_BRIDGE_CERTIFICATE_BASE64"
+	// EnvBridgeGraphToken and EnvBridgeTeamsToken carry the two access tokens
+	// obtained with OIDC or a managed identity: auth.ps1 then connects with
+	// them instead of a certificate.
+	EnvBridgeGraphToken = "TEAMS_BRIDGE_GRAPH_TOKEN"
+	EnvBridgeTeamsToken = "TEAMS_BRIDGE_TEAMS_TOKEN"
+)
+
+// envBridgePrefix is the prefix of the variables the client sets for the
+// bridge. Inherited ones are dropped: a value left over from a manual test
+// must never reach auth.ps1.
+const envBridgePrefix = "TEAMS_BRIDGE_"
+
+// hiddenFromBridge lists the variables that give access to an OIDC token or a
+// managed identity token, or hold the certificate. PowerShell only needs the
+// access tokens and the bridge variables, so these are not passed on.
+var hiddenFromBridge = []string{
+	"TEAMS_OIDC_TOKEN",
+	"TEAMS_OIDC_TOKEN_FILE_PATH",
+	"TEAMS_CERTIFICATE_BASE64",
+	"ACTIONS_ID_TOKEN_REQUEST_TOKEN",
+	"ACTIONS_ID_TOKEN_REQUEST_URL",
+	// Secrets of the managed identity endpoints of App Service and Azure
+	// Machine Learning: the provider asks for the token, PowerShell never does.
+	"IDENTITY_HEADER",
+	"MSI_SECRET",
+}
 
 // Tunables, overridable through environment variables.
 const (
@@ -61,7 +91,12 @@ type Config struct {
 	CertificatePath       string
 	CertificatePassword   string
 	CertificateThumbprint string
+	CertificateBase64     string
 	Environment           string
+
+	// TokenSource provides the access tokens when the provider authenticates
+	// with OIDC or a managed identity. nil means certificate authentication.
+	TokenSource TokenSource
 }
 
 // Client is the main provider client.
@@ -198,9 +233,13 @@ func (c *Client) RunScript(ctx context.Context, script string, params map[string
 
 // runOneShot starts a dedicated PowerShell process for a single script run.
 func (c *Client) runOneShot(ctx context.Context, name string, params map[string]string) ([]byte, error) {
+	env, _, err := c.buildEnv(ctx)
+	if err != nil {
+		return nil, err
+	}
 	binary, args := c.buildArgs(filepath.Join(c.scriptDir, name), params)
 	cmd := exec.CommandContext(ctx, binary, args...)
-	cmd.Env = c.buildEnv()
+	cmd.Env = env
 
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
@@ -253,11 +292,35 @@ func (c *Client) buildArgs(scriptPath string, params map[string]string) (string,
 	return binary, args
 }
 
-// buildEnv returns the parent environment plus the secrets for auth.ps1.
-func (c *Client) buildEnv() []string {
+// buildEnv returns the environment of a new PowerShell process: the parent
+// environment without the variables listed above, plus the secrets for
+// auth.ps1. With OIDC or a managed identity it also returns when the first of
+// the access tokens it passes expires; otherwise the time is zero.
+func (c *Client) buildEnv(ctx context.Context) ([]string, time.Time, error) {
+	env := make([]string, 0, len(os.Environ())+5)
+	for _, kv := range os.Environ() {
+		name, _, _ := strings.Cut(kv, "=")
+		if strings.HasPrefix(name, envBridgePrefix) || slices.Contains(hiddenFromBridge, name) {
+			continue
+		}
+		env = append(env, kv)
+	}
 	// NO_COLOR stops PowerShell 7 from wrapping error messages in ANSI escape
 	// codes, which would otherwise end up in Terraform diagnostics.
-	return append(os.Environ(), "NO_COLOR=1", EnvBridgeCertificatePassword+"="+c.config.CertificatePassword)
+	env = append(env, "NO_COLOR=1",
+		EnvBridgeCertificatePassword+"="+c.config.CertificatePassword,
+		EnvBridgeCertificateBase64+"="+c.config.CertificateBase64)
+
+	var expiresOn time.Time
+	if c.config.TokenSource != nil {
+		tokens, err := c.config.TokenSource.Token(ctx)
+		if err != nil {
+			return nil, time.Time{}, err
+		}
+		env = append(env, EnvBridgeGraphToken+"="+tokens.Graph, EnvBridgeTeamsToken+"="+tokens.Teams)
+		expiresOn = tokens.ExpiresOn
+	}
+	return env, expiresOn, nil
 }
 
 // IsNotFound reports whether a bridge "Get" call signalled that the object no

@@ -4,9 +4,14 @@
 # RUNTIME REQUIREMENTS:
 #   pwsh (PowerShell 7+) and the MicrosoftTeams module (Install-Module MicrosoftTeams)
 #
-# App-only CBA: the app registration needs the Microsoft Graph application
-# permission Organization.Read.All (admin consent) and the Teams Administrator
-# Entra role. That is enough for the *-Cs* cmdlets used by this provider.
+# App-only authentication, in this order:
+#   - two access tokens (Microsoft Graph, Teams) obtained by the provider with
+#     OIDC or a managed identity (TEAMS_BRIDGE_GRAPH_TOKEN, TEAMS_BRIDGE_TEAMS_TOKEN);
+#   - a certificate: Windows store thumbprint, base64 content of a .pfx
+#     (TEAMS_BRIDGE_CERTIFICATE_BASE64), or .pfx file.
+# The identity needs the Microsoft Graph application permission
+# Organization.Read.All (admin consent) and the Teams Administrator Entra role.
+# That is enough for the *-Cs* cmdlets used by this provider.
 
 param(
     [string]$TenantId              = "",
@@ -27,11 +32,13 @@ $ErrorActionPreference = "Stop"
 & {
     param([string]$TenantId, [string]$ClientId, [string]$CertificatePath, [string]$CertificatePassword, [string]$CertificateThumbprint, [string]$Environment)
 
-    # The certificate password is passed by the Go client through the environment,
-    # never on the command line (command lines are visible to every local user and
-    # are logged by process-creation auditing). An explicit parameter still wins,
-    # for manual testing.
+    # Secrets are passed by the Go client through environment variables, never on the
+    # command line (command lines are visible to every local user and are logged by
+    # process-creation auditing). Explicit parameters still win, for manual testing.
     if (-not $CertificatePassword -and $env:TEAMS_BRIDGE_CERTIFICATE_PASSWORD) { $CertificatePassword = $env:TEAMS_BRIDGE_CERTIFICATE_PASSWORD }
+    $graphToken        = $env:TEAMS_BRIDGE_GRAPH_TOKEN
+    $teamsToken        = $env:TEAMS_BRIDGE_TEAMS_TOKEN
+    $certificateBase64 = $env:TEAMS_BRIDGE_CERTIFICATE_BASE64
 
     # Commercial and GCC tenants use the default endpoints.
     $teamsEnvironments = @{
@@ -48,32 +55,51 @@ $ErrorActionPreference = "Stop"
     # one PowerShell process serves many requests and reuses the first connection.
     if (Get-Variable -Name TeamsBridgeConnected -Scope Global -ErrorAction SilentlyContinue) { return }
 
-    if (-not $ClientId) { throw "client_id is required" }
     if (-not $TenantId) { throw "tenant_id is required" }
 
-    $connectParams = @{
-        TenantId      = $TenantId
-        ApplicationId = $ClientId
-    }
-    if ($teamsEnvironments[$Environment]) { $connectParams["TeamsEnvironmentName"] = $teamsEnvironments[$Environment] }
-
-    if ($CertificateThumbprint) {
-        # Windows certificate store — thumbprint lookup
-        $connectParams["CertificateThumbprint"] = $CertificateThumbprint
+    if ($graphToken -and $teamsToken) {
+        # OIDC or managed identity: the provider obtained these access tokens
+        # and starts a new process before the first one expires. A token
+        # already names its identity: a system-assigned managed identity has
+        # no client ID at all. The tokens also name the tenant: with -TenantId,
+        # Connect-MicrosoftTeams fails with "Not supported tenant type".
+        $connectParams = @{ AccessTokens = @($graphToken, $teamsToken) }
     } else {
-        # PFX file. EphemeralKeySet keeps the private key out of the key store, but macOS
-        # does not support it: there the default loads the key into a temporary keychain.
-        if (-not $CertificatePath) { throw "Either certificate_path or certificate_thumbprint is required" }
+        if (-not $ClientId) { throw "client_id is required" }
+        $connectParams = @{
+            TenantId      = $TenantId
+            ApplicationId = $ClientId
+        }
+        if ($teamsEnvironments[$Environment]) { $connectParams["TeamsEnvironmentName"] = $teamsEnvironments[$Environment] }
+
+        # EphemeralKeySet keeps the private key out of the key store, but macOS does
+        # not support it: there the default loads the key into a temporary keychain.
         $certFlags = if ($IsMacOS) {
             [System.Security.Cryptography.X509Certificates.X509KeyStorageFlags]::DefaultKeySet
         } else {
             [System.Security.Cryptography.X509Certificates.X509KeyStorageFlags]::EphemeralKeySet
         }
-        $connectParams["Certificate"] = [System.Security.Cryptography.X509Certificates.X509Certificate2]::new(
-            $CertificatePath,
-            $CertificatePassword,
-            $certFlags
-        )
+        if ($CertificateThumbprint) {
+            # Windows certificate store — thumbprint lookup
+            $connectParams["CertificateThumbprint"] = $CertificateThumbprint
+        } elseif ($certificateBase64) {
+            # Content of the .pfx, decoded in memory: no file on disk. A value cut
+            # in lines (base64 without -A, a vault) is accepted.
+            $bytes = [Convert]::FromBase64String(($certificateBase64 -replace '\s', ''))
+            $connectParams["Certificate"] = [System.Security.Cryptography.X509Certificates.X509Certificate2]::new(
+                [byte[]]$bytes,
+                $CertificatePassword,
+                $certFlags
+            )
+        } elseif ($CertificatePath) {
+            $connectParams["Certificate"] = [System.Security.Cryptography.X509Certificates.X509Certificate2]::new(
+                $CertificatePath,
+                $CertificatePassword,
+                $certFlags
+            )
+        } else {
+            throw "Either certificate_path, certificate_base64 or certificate_thumbprint is required"
+        }
     }
 
     try {

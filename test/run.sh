@@ -14,8 +14,13 @@
 #
 # Required env vars (exported, or read from .env at repo root; exported values win):
 #   TEAMS_TENANT_ID
-#   TEAMS_CLIENT_ID
-#   TEAMS_CERTIFICATE_PATH and TEAMS_CERTIFICATE_PASSWORD, or TEAMS_CERTIFICATE_THUMBPRINT
+#   TEAMS_CLIENT_ID         (not with managed_identity, except for a user-assigned identity)
+#   and the credentials of the authentication method (TEAMS_AUTH_METHOD):
+#     client_certificate (default): TEAMS_CERTIFICATE_PATH, TEAMS_CERTIFICATE_BASE64 or
+#                                   TEAMS_CERTIFICATE_THUMBPRINT, and TEAMS_CERTIFICATE_PASSWORD
+#     oidc_github                 : nothing more, inside a GitHub Actions job with id-token: write
+#     oidc                        : TEAMS_OIDC_TOKEN or TEAMS_OIDC_TOKEN_FILE_PATH
+#     managed_identity            : nothing more, on an Azure resource or Azure Arc-enabled server
 #
 # Optional:
 #   TF_VAR_test_group_id    object ID of an existing group, to test group policy assignments
@@ -75,16 +80,22 @@ step "Checking prerequisites"
 for cmd in go terraform pwsh; do
   command -v "$cmd" > /dev/null || fail "$cmd is not installed"
 done
-for var in TEAMS_TENANT_ID TEAMS_CLIENT_ID; do
+AUTH_METHOD="${TEAMS_AUTH_METHOD:-client_certificate}"
+REQUIRED_VARS=(TEAMS_TENANT_ID)
+# A system-assigned managed identity has no client ID.
+[[ "$AUTH_METHOD" != "managed_identity" ]] && REQUIRED_VARS+=(TEAMS_CLIENT_ID)
+for var in "${REQUIRED_VARS[@]}"; do
   [[ -n "${!var:-}" ]] || fail "$var is not set. Add it to $ROOT/.env or export it."
 done
-if [[ -z "${TEAMS_CERTIFICATE_PATH:-}" && -z "${TEAMS_CERTIFICATE_THUMBPRINT:-}" ]]; then
-  fail "Set TEAMS_CERTIFICATE_PATH (with TEAMS_CERTIFICATE_PASSWORD) or TEAMS_CERTIFICATE_THUMBPRINT."
+# The provider checks the other methods' settings itself, with clearer messages.
+if [[ "$AUTH_METHOD" == "client_certificate" && -z "${TEAMS_CERTIFICATE_PATH:-}" &&
+      -z "${TEAMS_CERTIFICATE_BASE64:-}" && -z "${TEAMS_CERTIFICATE_THUMBPRINT:-}" ]]; then
+  fail "Set TEAMS_CERTIFICATE_PATH or TEAMS_CERTIFICATE_BASE64 (with TEAMS_CERTIFICATE_PASSWORD), or TEAMS_CERTIFICATE_THUMBPRINT."
 fi
 if [[ -n "${TEAMS_CERTIFICATE_PATH:-}" && ! -r "$TEAMS_CERTIFICATE_PATH" ]]; then
   fail "TEAMS_CERTIFICATE_PATH=$TEAMS_CERTIFICATE_PATH is not a readable file."
 fi
-pass "Credentials OK (tenant: $TEAMS_TENANT_ID)"
+pass "Credentials OK (tenant: $TEAMS_TENANT_ID, auth: $AUTH_METHOD)"
 
 # ---------------------------------------------------------------------------
 # 3. Check ~/.terraformrc dev_overrides

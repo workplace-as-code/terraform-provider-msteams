@@ -1,0 +1,97 @@
+name: OIDC integration test
+
+# Checks OIDC authentication against the test tenant: GitHub issues a token
+# for the job, Entra ID exchanges it for the Microsoft Graph and Teams access
+# tokens, and the provider reads the tenant with them (test/oidc: terraform
+# query). Read-only: nothing is created or changed. No certificate or secret
+# credential is stored in GitHub.
+#
+# The job runs in the "test" environment: only main and feat/* branches can use
+# it, and every run waits for a maintainer's approval. The read-only app
+# registration trusts the subject of that environment. This repository uses
+# GitHub's immutable subject format:
+#   repo:workplace-as-code@343895121/terraform-provider-msteams@1429644199:environment:test
+# A pull request from a fork never reaches it.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write # lets the job request its OIDC token
+
+concurrency:
+  group: oidc
+  cancel-in-progress: false
+
+jobs:
+  oidc:
+    name: OIDC authentication
+    runs-on: ubuntu-latest
+    environment: test
+    timeout-minutes: 30
+    env:
+      TEAMS_AUTH_METHOD: oidc_github
+      TEAMS_TENANT_ID: ${{ secrets.TEAMS_TENANT_ID }}
+      TEAMS_CLIENT_ID: ${{ secrets.TEAMS_CLIENT_ID }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+
+      - uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4.0.1
+        with:
+          terraform_wrapper: false
+
+      - name: Install the MicrosoftTeams module
+        shell: pwsh
+        run: |
+          Install-PSResource -Name MicrosoftTeams -Scope CurrentUser -TrustRepository -Quiet
+
+      - name: Show the tested versions
+        shell: pwsh
+        run: |
+          terraform version
+          "PowerShell $($PSVersionTable.PSVersion)"
+          Get-Module -ListAvailable MicrosoftTeams | Select-Object Name, Version | Format-Table
+
+      # Exchanges the job's OIDC token outside the provider: when the federated
+      # credential is wrong, this step fails with the Entra ID error code
+      # instead of the provider failing later.
+      - name: Check the federated credential
+        run: |
+          assertion=$(curl -sS -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
+            "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=api://AzureADTokenExchange" | jq -r .value)
+          echo "::add-mask::$assertion"
+          response=$(curl -sS "https://login.microsoftonline.com/$TEAMS_TENANT_ID/oauth2/v2.0/token" \
+            --data-urlencode grant_type=client_credentials \
+            --data-urlencode "client_id=$TEAMS_CLIENT_ID" \
+            --data-urlencode client_assertion_type=urn:ietf:params:oauth:client-assertion-type:jwt-bearer \
+            --data-urlencode "client_assertion=$assertion" \
+            --data-urlencode scope=48ac35b8-9aa8-4d74-927d-1f4a14a0b239/.default)
+          if [ "$(jq -r 'has("access_token")' <<<"$response")" = "true" ]; then
+            echo "OK: Entra ID issued a Teams access token for the job's OIDC token"
+          else
+            echo "::error::Entra ID refused the job's OIDC token"
+            jq '{error, error_codes, error_description}' <<<"$response"
+            exit 1
+          fi
+
+      - name: Build the provider and point Terraform at it
+        run: |
+          go build -o "$RUNNER_TEMP/bin/terraform-provider-msteams" .
+          cat > "$HOME/.terraformrc" <<RC
+          provider_installation {
+            dev_overrides {
+              "workplace-as-code/msteams" = "$RUNNER_TEMP/bin"
+            }
+            direct {}
+          }
+          RC
+
+      - name: Initialize the test configuration
+        run: terraform -chdir=test/oidc init -input=false
+
+      - name: List objects with OIDC (terraform query)
+        run: terraform -chdir=test/oidc query
