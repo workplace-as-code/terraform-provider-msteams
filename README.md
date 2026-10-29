@@ -92,7 +92,7 @@ Every policy resource manages either a custom policy or, with `name = "Global"`,
 
 - Terraform >= 1.5
 - PowerShell 7+ (`pwsh`) with the MicrosoftTeams module (`Install-Module MicrosoftTeams`)
-- An Entra ID app registration with a certificate, the `Organization.Read.All` Graph permission and the Teams Administrator role (see the [Authentication guide](docs/guides/authentication.md))
+- An Entra ID app registration with the `Organization.Read.All` Graph permission and the Teams Administrator role, authenticating with a certificate or OIDC (see the [Authentication guide](docs/guides/authentication.md))
 
 The PowerShell bridge scripts are embedded in the provider binary: nothing else needs to be installed. The provider keeps a few PowerShell processes open during a run, so the Teams connection is opened once per process instead of once per resource.
 
@@ -111,7 +111,7 @@ The PowerShell bridge scripts are embedded in the provider binary: nothing else 
 ## Documentation
 
 - [Getting Started](docs/guides/getting_started.md)
-- [Authentication](docs/guides/authentication.md)
+- [Authentication](docs/guides/authentication.md): [certificate](docs/guides/auth_client_certificate.md), [OIDC with GitHub Actions](docs/guides/auth_oidc_github.md), [OIDC with any platform](docs/guides/auth_oidc.md)
 - [Import an existing tenant](docs/guides/import_existing.md)
 - [Detect drift in CI](docs/guides/drift_detection.md)
 - [Troubleshooting](docs/guides/troubleshooting.md)

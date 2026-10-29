@@ -15,7 +15,11 @@
 # Required env vars (exported, or read from .env at repo root; exported values win):
 #   TEAMS_TENANT_ID
 #   TEAMS_CLIENT_ID
-#   TEAMS_CERTIFICATE_PATH and TEAMS_CERTIFICATE_PASSWORD, or TEAMS_CERTIFICATE_THUMBPRINT
+#   and the credentials of the authentication method (TEAMS_AUTH_METHOD):
+#     client_certificate (default): TEAMS_CERTIFICATE_PATH, TEAMS_CERTIFICATE_BASE64 or
+#                                   TEAMS_CERTIFICATE_THUMBPRINT, and TEAMS_CERTIFICATE_PASSWORD
+#     oidc_github                 : nothing more, inside a GitHub Actions job with id-token: write
+#     oidc                        : TEAMS_OIDC_TOKEN or TEAMS_OIDC_TOKEN_FILE_PATH
 #
 # Optional:
 #   TF_VAR_test_group_id    object ID of an existing group, to test group policy assignments
@@ -78,13 +82,16 @@ done
 for var in TEAMS_TENANT_ID TEAMS_CLIENT_ID; do
   [[ -n "${!var:-}" ]] || fail "$var is not set. Add it to $ROOT/.env or export it."
 done
-if [[ -z "${TEAMS_CERTIFICATE_PATH:-}" && -z "${TEAMS_CERTIFICATE_THUMBPRINT:-}" ]]; then
-  fail "Set TEAMS_CERTIFICATE_PATH (with TEAMS_CERTIFICATE_PASSWORD) or TEAMS_CERTIFICATE_THUMBPRINT."
+AUTH_METHOD="${TEAMS_AUTH_METHOD:-client_certificate}"
+# The provider checks the other methods' settings itself, with clearer messages.
+if [[ "$AUTH_METHOD" == "client_certificate" && -z "${TEAMS_CERTIFICATE_PATH:-}" &&
+      -z "${TEAMS_CERTIFICATE_BASE64:-}" && -z "${TEAMS_CERTIFICATE_THUMBPRINT:-}" ]]; then
+  fail "Set TEAMS_CERTIFICATE_PATH or TEAMS_CERTIFICATE_BASE64 (with TEAMS_CERTIFICATE_PASSWORD), or TEAMS_CERTIFICATE_THUMBPRINT."
 fi
 if [[ -n "${TEAMS_CERTIFICATE_PATH:-}" && ! -r "$TEAMS_CERTIFICATE_PATH" ]]; then
   fail "TEAMS_CERTIFICATE_PATH=$TEAMS_CERTIFICATE_PATH is not a readable file."
 fi
-pass "Credentials OK (tenant: $TEAMS_TENANT_ID)"
+pass "Credentials OK (tenant: $TEAMS_TENANT_ID, auth: $AUTH_METHOD)"
 
 # ---------------------------------------------------------------------------
 # 3. Check ~/.terraformrc dev_overrides

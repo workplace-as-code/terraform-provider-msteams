@@ -2,7 +2,6 @@ package provider
 
 import (
 	"context"
-	"fmt"
 	"os"
 
 	"github.com/hashicorp/terraform-plugin-framework-validators/stringvalidator"
@@ -23,12 +22,18 @@ type teamsProvider struct {
 	version string
 }
 
+// teamsProviderModel represents the HCL provider {} block. Every field is
+// optional: it can also come from a TEAMS_* environment variable.
 type teamsProviderModel struct {
 	TenantID              types.String `tfsdk:"tenant_id"`
 	ClientID              types.String `tfsdk:"client_id"`
+	AuthMethod            types.String `tfsdk:"auth_method"`
 	CertificatePath       types.String `tfsdk:"certificate_path"`
 	CertificatePassword   types.String `tfsdk:"certificate_password"`
 	CertificateThumbprint types.String `tfsdk:"certificate_thumbprint"`
+	CertificateBase64     types.String `tfsdk:"certificate_base64"`
+	OIDCToken             types.String `tfsdk:"oidc_token"`
+	OIDCTokenFilePath     types.String `tfsdk:"oidc_token_file_path"`
 	Environment           types.String `tfsdk:"environment"`
 }
 
@@ -46,7 +51,7 @@ func (p *teamsProvider) Metadata(_ context.Context, _ provider.MetadataRequest, 
 
 func (p *teamsProvider) Schema(_ context.Context, _ provider.SchemaRequest, resp *provider.SchemaResponse) {
 	resp.Schema = schema.Schema{
-		MarkdownDescription: "The Microsoft Teams provider manages Teams policies and tenant settings as code. It uses app-only certificate-based authentication through the MicrosoftTeams PowerShell module.",
+		MarkdownDescription: "The Microsoft Teams provider manages Teams policies and tenant settings as code. It authenticates app-only through the MicrosoftTeams PowerShell module, with a certificate or OIDC.",
 		Attributes: map[string]schema.Attribute{
 			"tenant_id": schema.StringAttribute{
 				Optional:            true,
@@ -56,18 +61,37 @@ func (p *teamsProvider) Schema(_ context.Context, _ provider.SchemaRequest, resp
 				Optional:            true,
 				MarkdownDescription: "Entra ID app registration client ID. Required, either here or via the `TEAMS_CLIENT_ID` environment variable.",
 			},
+			"auth_method": schema.StringAttribute{
+				Optional:            true,
+				Validators:          []validator.String{stringvalidator.OneOf(authMethods...)},
+				MarkdownDescription: "How the provider authenticates. Valid values: `client_certificate` (default: a certificate, see `certificate_path`, `certificate_base64` and `certificate_thumbprint`), `oidc` (an OIDC token from any platform, see `oidc_token` and `oidc_token_file_path`), `oidc_github` (the OIDC token of the GitHub Actions job, which needs `permissions: id-token: write`). Can also be set via `TEAMS_AUTH_METHOD` environment variable.",
+			},
 			"certificate_path": schema.StringAttribute{
 				Optional:            true,
-				MarkdownDescription: "Path to the `.pfx` certificate file for app-only (CBA) authentication. Use this or `certificate_thumbprint`. Can also be set via `TEAMS_CERTIFICATE_PATH` environment variable.",
+				MarkdownDescription: "Path to the `.pfx` certificate file for app-only (CBA) authentication. Use only one of `certificate_path`, `certificate_base64` and `certificate_thumbprint`. Can also be set via `TEAMS_CERTIFICATE_PATH` environment variable.",
+			},
+			"certificate_base64": schema.StringAttribute{
+				Optional:            true,
+				Sensitive:           true,
+				MarkdownDescription: "Content of the `.pfx` certificate file, private key included, encoded in base64 (for example `openssl base64 -A -in app.pfx`). Decoded in memory: no file is written. Use it to pass the certificate from a vault or a masked CI variable. Use only one of `certificate_path`, `certificate_base64` and `certificate_thumbprint`. Can also be set via `TEAMS_CERTIFICATE_BASE64` environment variable.",
 			},
 			"certificate_password": schema.StringAttribute{
 				Optional:            true,
 				Sensitive:           true,
-				MarkdownDescription: "Password for the `.pfx` certificate file. Can also be set via `TEAMS_CERTIFICATE_PASSWORD` environment variable.",
+				MarkdownDescription: "Password for the `.pfx` certificate, given as a file or in base64. Can also be set via `TEAMS_CERTIFICATE_PASSWORD` environment variable.",
 			},
 			"certificate_thumbprint": schema.StringAttribute{
 				Optional:            true,
-				MarkdownDescription: "Thumbprint of a certificate already loaded in the Windows certificate store. Use this or `certificate_path`. Can also be set via `TEAMS_CERTIFICATE_THUMBPRINT` environment variable.",
+				MarkdownDescription: "Thumbprint of a certificate already loaded in the Windows certificate store. Use only one of `certificate_path`, `certificate_base64` and `certificate_thumbprint`. Can also be set via `TEAMS_CERTIFICATE_THUMBPRINT` environment variable.",
+			},
+			"oidc_token": schema.StringAttribute{
+				Optional:            true,
+				Sensitive:           true,
+				MarkdownDescription: "With `auth_method = \"oidc\"`: the OIDC token that Entra ID exchanges for access tokens (for example a GitLab `id_tokens` value). It cannot be renewed during the run: prefer `oidc_token_file_path` when the platform writes the token to a file. Use only one of `oidc_token` and `oidc_token_file_path`. Can also be set via `TEAMS_OIDC_TOKEN` environment variable.",
+			},
+			"oidc_token_file_path": schema.StringAttribute{
+				Optional:            true,
+				MarkdownDescription: "With `auth_method = \"oidc\"`: path to a file that contains the OIDC token, read again each time new access tokens are needed (Kubernetes renews projected tokens). Use only one of `oidc_token` and `oidc_token_file_path`. Can also be set via `TEAMS_OIDC_TOKEN_FILE_PATH` environment variable.",
 			},
 			"environment": schema.StringAttribute{
 				Optional:            true,
@@ -85,31 +109,8 @@ func (p *teamsProvider) Configure(ctx context.Context, req provider.ConfigureReq
 		return
 	}
 
-	var cfg client.Config
-	cfg.TenantID = envOrConfig("TEAMS_TENANT_ID", config.TenantID)
-	cfg.ClientID = envOrConfig("TEAMS_CLIENT_ID", config.ClientID)
-	cfg.CertificatePath = envOrConfig("TEAMS_CERTIFICATE_PATH", config.CertificatePath)
-	cfg.CertificatePassword = envOrConfig("TEAMS_CERTIFICATE_PASSWORD", config.CertificatePassword)
-	cfg.CertificateThumbprint = envOrConfig("TEAMS_CERTIFICATE_THUMBPRINT", config.CertificateThumbprint)
-	cfg.Environment = envOrConfig("TEAMS_ENVIRONMENT", config.Environment)
-	if cfg.Environment == "" {
-		cfg.Environment = "global"
-	}
-
-	if cfg.TenantID == "" {
-		resp.Diagnostics.AddError("Missing tenant_id", "tenant_id is required. Set it in the provider block or via TEAMS_TENANT_ID.")
-	}
-	if cfg.ClientID == "" {
-		resp.Diagnostics.AddError("Missing client_id", "client_id is required. Set it in the provider block or via TEAMS_CLIENT_ID.")
-	}
-	if cfg.CertificatePath == "" && cfg.CertificateThumbprint == "" {
-		resp.Diagnostics.AddError("Missing certificate", "Either certificate_path or certificate_thumbprint is required.")
-	} else if problem := certificateFileProblem(cfg.CertificatePath); problem != "" {
-		// Checked here so that a wrong path fails at plan time with a clear message,
-		// instead of an OpenSSL error from PowerShell at apply time.
-		resp.Diagnostics.AddError("Invalid certificate_path", problem)
-	}
-
+	cfg, diags := resolveConfig(config)
+	resp.Diagnostics.Append(diags...)
 	if resp.Diagnostics.HasError() {
 		return
 	}
@@ -147,28 +148,4 @@ func envOrConfig(envKey string, configVal types.String) string {
 		return configVal.ValueString()
 	}
 	return os.Getenv(envKey)
-}
-
-// certificateFileProblem describes why the .pfx file at path cannot be used, or
-// returns "" when it is a readable file. An empty path is not checked: the
-// certificate then comes from certificate_thumbprint.
-func certificateFileProblem(path string) string {
-	if path == "" {
-		return ""
-	}
-	info, err := os.Stat(path)
-	switch {
-	case os.IsNotExist(err):
-		return fmt.Sprintf("certificate_path %q does not exist. Set the path of the app registration's .pfx file, in the provider block or via TEAMS_CERTIFICATE_PATH. A relative path is resolved from the folder where Terraform runs.", path)
-	case err != nil:
-		return fmt.Sprintf("certificate_path %q cannot be read: %v", path, err)
-	case info.IsDir():
-		return fmt.Sprintf("certificate_path %q is a folder: set the path of the .pfx file itself.", path)
-	}
-	f, err := os.Open(path)
-	if err != nil {
-		return fmt.Sprintf("certificate_path %q cannot be read: %v", path, err)
-	}
-	_ = f.Close()
-	return ""
 }

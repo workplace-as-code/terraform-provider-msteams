@@ -55,9 +55,79 @@ func TestSecretsAreNeverOnTheCommandLine(t *testing.T) {
 	if strings.Contains(joined, "s3cr3t") {
 		t.Errorf("secret leaked into args: %s", joined)
 	}
-	env := strings.Join(c.buildEnv(), "\n")
-	if !strings.Contains(env, "s3cr3t") {
+	env, _, err := c.buildEnv(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(strings.Join(env, "\n"), "s3cr3t") {
 		t.Error("secret missing from child environment")
+	}
+}
+
+// fakeTokenSource hands out the given tokens in order, then keeps returning
+// the last one. It counts the calls.
+type fakeTokenSource struct {
+	tokens []AccessTokens
+	err    error
+	calls  int
+}
+
+func (f *fakeTokenSource) Token(context.Context) (AccessTokens, error) {
+	f.calls++
+	if f.err != nil {
+		return AccessTokens{}, f.err
+	}
+	i := min(f.calls, len(f.tokens)) - 1
+	return f.tokens[i], nil
+}
+
+func TestBridgeEnvDropsInheritedBridgeSecrets(t *testing.T) {
+	t.Setenv(EnvBridgeGraphToken, "stale")
+	t.Setenv("TEAMS_OIDC_TOKEN", "jwt")
+	t.Setenv("ACTIONS_ID_TOKEN_REQUEST_TOKEN", "gh")
+	t.Setenv("IDENTITY_HEADER", "app-service-secret")
+	t.Setenv("MSI_SECRET", "azure-ml-secret")
+	c := &Client{config: Config{CertificatePath: "/x.pfx"}}
+	env, expiresOn, err := c.buildEnv(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, kv := range env {
+		if kv == EnvBridgeGraphToken+"=stale" || strings.HasPrefix(kv, "TEAMS_OIDC_TOKEN=") || strings.HasPrefix(kv, "ACTIONS_ID_TOKEN_REQUEST_TOKEN=") ||
+			strings.HasPrefix(kv, "IDENTITY_HEADER=") || strings.HasPrefix(kv, "MSI_SECRET=") {
+			t.Errorf("the bridge environment still contains %s", kv)
+		}
+	}
+	if !expiresOn.IsZero() {
+		t.Errorf("no token source, yet an expiry: %v", expiresOn)
+	}
+}
+
+func TestRunScriptPassesTheAccessTokensThroughEnvironment(t *testing.T) {
+	fakePwsh(t, `echo "$`+EnvBridgeGraphToken+` $`+EnvBridgeTeamsToken+`"`)
+	c := newTestClient(time.Minute)
+	c.config.TokenSource = &fakeTokenSource{tokens: []AccessTokens{{Graph: "graph-1", Teams: "teams-1", ExpiresOn: time.Now().Add(time.Hour)}}}
+	out, err := c.RunScript(context.Background(), "x.ps1", nil)
+	if err != nil || strings.TrimSpace(string(out)) != "graph-1 teams-1" {
+		t.Fatalf("out=%q err=%v", out, err)
+	}
+	_, args := c.buildArgs("/scripts/x.ps1", nil)
+	if joined := strings.Join(args, " "); strings.Contains(joined, "graph-1") || strings.Contains(joined, "teams-1") {
+		t.Fatal("access token leaked into the command line")
+	}
+}
+
+func TestRunScriptPassesTheCertificateBase64ThroughEnvironment(t *testing.T) {
+	fakePwsh(t, `echo "$`+EnvBridgeCertificateBase64+`"`)
+	c := newTestClient(time.Minute)
+	c.config.CertificateBase64 = "TUlJQ2VkLXBmeA=="
+	out, err := c.RunScript(context.Background(), "x.ps1", nil)
+	if err != nil || strings.TrimSpace(string(out)) != "TUlJQ2VkLXBmeA==" {
+		t.Fatalf("out=%q err=%v", out, err)
+	}
+	_, args := c.buildArgs("/scripts/x.ps1", nil)
+	if strings.Contains(strings.Join(args, " "), "TUlJQ2VkLXBmeA==") {
+		t.Fatal("certificate leaked into the command line")
 	}
 }
 
