@@ -14,6 +14,9 @@ name: OIDC integration test
 # A pull request from a fork never reaches it.
 on:
   workflow_dispatch:
+  # Temporary: workflow_dispatch needs the workflow on main. Removed before merge.
+  push:
+    branches: [feat/oidc-managed-identity]
 
 permissions:
   contents: read
