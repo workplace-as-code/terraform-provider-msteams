@@ -83,6 +83,7 @@ Every policy resource manages either a custom policy or, with `name = "Global"`,
 ### Related providers
 
 - [workplace-as-code/msexchangeonline](https://github.com/workplace-as-code/terraform-provider-msexchangeonline): Exchange Online mail flow, anti-spam, anti-phishing and Defender for Office 365, built on the same PowerShell bridge.
+- [workplace-as-code/msexchangeserver](https://github.com/workplace-as-code/terraform-provider-msexchangeserver): Exchange Server (on-premises) configuration.
 
 ---
 
