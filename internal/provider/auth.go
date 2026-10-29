@@ -4,6 +4,8 @@ import (
 	"encoding/base64"
 	"fmt"
 	"os"
+	"regexp"
+	"slices"
 	"strings"
 
 	"github.com/hashicorp/terraform-plugin-framework/diag"
@@ -17,9 +19,10 @@ const (
 	authClientCertificate = "client_certificate"
 	authOIDC              = "oidc"
 	authOIDCGitHub        = "oidc_github"
+	authManagedIdentity   = "managed_identity"
 )
 
-var authMethods = []string{authClientCertificate, authOIDC, authOIDCGitHub}
+var authMethods = []string{authClientCertificate, authOIDC, authOIDCGitHub, authManagedIdentity}
 
 // staticTokenHint explains the most likely cause when a token passed as a fixed
 // value stops working during a run.
@@ -58,7 +61,9 @@ func resolveConfig(m teamsProviderModel) (client.Config, diag.Diagnostics) {
 		method = authClientCertificate
 		oidcToken, oidcFile = configValue(m.OIDCToken), configValue(m.OIDCTokenFilePath)
 	}
-	if cfg.ClientID == "" {
+	// A managed identity needs no client ID: without one, the system-assigned
+	// identity of the machine connects.
+	if cfg.ClientID == "" && method != authManagedIdentity {
 		diags.AddError("Missing client_id", "client_id is required. Set it in the provider block or via TEAMS_CLIENT_ID.")
 	}
 
@@ -132,6 +137,25 @@ func resolveConfig(m teamsProviderModel) (client.Config, diag.Diagnostics) {
 			hint = staticTokenHint
 		}
 
+	case authManagedIdentity:
+		if conflicting := slices.Concat(certificates, oidcSources); len(conflicting) > 0 {
+			diags.AddError("Conflicting authentication settings",
+				fmt.Sprintf("auth_method = %q uses neither a certificate nor an OIDC token, but %s is set (in the provider block or a TEAMS_* variable): choose one method.", method, strings.Join(conflicting, " and ")))
+		}
+		if cfg.Environment != "global" && cfg.Environment != "gcc" {
+			diags.AddError("Managed identity not available in this environment",
+				fmt.Sprintf("The managed identity is only supported in the global and gcc environments for now, not in %q: use certificate authentication.", cfg.Environment))
+		}
+		if m.ClientID.IsUnknown() {
+			// Unknown values fall back to TEAMS_CLIENT_ID or to nothing,
+			// which would silently connect as another identity.
+			diags.AddError("Unknown client_id",
+				fmt.Sprintf("With auth_method = %q, client_id comes from a resource that is not created yet, so the provider cannot know which identity to use. Give it a known value (a variable, or a data source that reads an existing identity), or leave it out for the system-assigned identity.", method))
+		} else if cfg.ClientID != "" && !guid.MatchString(cfg.ClientID) {
+			diags.AddError("Invalid client_id",
+				fmt.Sprintf("With auth_method = %q, client_id must be the client ID (a GUID) of a user-assigned managed identity, or be left empty for the system-assigned identity: %q is not a GUID.", method, cfg.ClientID))
+		}
+
 	default:
 		diags.AddError("Invalid auth_method",
 			fmt.Sprintf("auth_method %q is not supported. Valid values: %s.", method, strings.Join(authMethods, ", ")))
@@ -140,7 +164,15 @@ func resolveConfig(m teamsProviderModel) (client.Config, diag.Diagnostics) {
 	if diags.HasError() {
 		return cfg, diags
 	}
-	if assertion != nil {
+	switch {
+	case method == authManagedIdentity:
+		source, err := client.NewManagedIdentityTokenSource(cfg.ClientID)
+		if err != nil {
+			diags.AddError("Invalid managed identity configuration", err.Error())
+			return cfg, diags
+		}
+		cfg.TokenSource = source
+	case assertion != nil:
 		source, err := client.NewOIDCTokenSource(cfg.TenantID, cfg.ClientID, assertion, hint)
 		if err != nil {
 			diags.AddError("Invalid OIDC configuration", err.Error())
@@ -150,6 +182,9 @@ func resolveConfig(m teamsProviderModel) (client.Config, diag.Diagnostics) {
 	}
 	return cfg, diags
 }
+
+// guid matches a client ID.
+var guid = regexp.MustCompile(`^[0-9a-fA-F]{8}-([0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}$`)
 
 // configValue returns the value written in the provider block, ignoring the
 // environment.

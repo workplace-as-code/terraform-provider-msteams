@@ -108,7 +108,52 @@ func TestResolveConfig(t *testing.T) {
 		"unknown auth_method from env": {
 			attrs:     map[string]string{"certificate_path": pfx},
 			env:       map[string]string{"TEAMS_AUTH_METHOD": "foo"},
-			wantError: "client_certificate, oidc, oidc_github",
+			wantError: "client_certificate, oidc, oidc_github, managed_identity",
+		},
+		"managed_identity system-assigned": {
+			attrs:           map[string]string{"auth_method": "managed_identity"},
+			noClientID:      true,
+			wantTokenSource: true,
+		},
+		"managed_identity user-assigned": {
+			attrs:           map[string]string{"auth_method": "managed_identity"},
+			wantTokenSource: true,
+		},
+		"managed_identity user-assigned upper-case client_id": {
+			attrs:           map[string]string{"auth_method": "managed_identity", "client_id": "AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE"},
+			wantTokenSource: true,
+		},
+		"managed_identity from env": {
+			env:             map[string]string{"TEAMS_AUTH_METHOD": "managed_identity"},
+			noClientID:      true,
+			wantTokenSource: true,
+		},
+		"managed_identity with a non-GUID client_id": {
+			attrs:     map[string]string{"auth_method": "managed_identity", "client_id": "terraform-msteams"},
+			wantError: "client ID (a GUID)",
+		},
+		"managed_identity with certificate_path": {
+			attrs:     map[string]string{"auth_method": "managed_identity", "certificate_path": pfx},
+			wantError: "Conflicting authentication settings",
+		},
+		"managed_identity with TEAMS_CERTIFICATE_PATH": {
+			attrs:     map[string]string{"auth_method": "managed_identity"},
+			env:       map[string]string{"TEAMS_CERTIFICATE_PATH": pfx},
+			wantError: "Conflicting authentication settings",
+		},
+		"managed_identity with TEAMS_OIDC_TOKEN": {
+			attrs:     map[string]string{"auth_method": "managed_identity"},
+			env:       map[string]string{"TEAMS_OIDC_TOKEN": secretToken},
+			wantError: "Conflicting authentication settings",
+		},
+		"managed_identity on gcchigh": {
+			attrs:     map[string]string{"auth_method": "managed_identity", "environment": "gcchigh"},
+			wantError: "only supported in the global and gcc environments",
+		},
+		"managed_identity with an unknown client_id": {
+			attrs:           map[string]string{"auth_method": "managed_identity"},
+			unknownClientID: true,
+			wantError:       "Unknown client_id",
 		},
 		"client_certificate without client_id": {
 			attrs:      map[string]string{"certificate_path": pfx},

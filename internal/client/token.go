@@ -9,6 +9,7 @@ import (
 	"net/url"
 	"os"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
@@ -42,7 +43,7 @@ type AccessTokens struct {
 //
 // An interface is a set of methods: any type that has a Token method with this
 // signature is a TokenSource. The tests use a fake one, OIDC uses
-// credentialTokenSource.
+// credentialTokenSource and the managed identity managedIdentityTokenSource.
 type TokenSource interface {
 	Token(ctx context.Context) (AccessTokens, error)
 }
@@ -167,4 +168,104 @@ func (s *credentialTokenSource) failure(err error) error {
 		msg += ". " + s.hint
 	}
 	return errors.New(msg)
+}
+
+// Retry bounds of the managed identity credential. IMDS, the identity endpoint
+// of an Azure VM, answers in milliseconds; azidentity's defaults (6 retries of
+// up to a minute each) are meant for a VM that is still starting, and keep a
+// run outside Azure waiting for minutes before it reports the problem.
+const (
+	managedIdentityMaxRetries = 3
+	managedIdentityTryTimeout = 5 * time.Second
+)
+
+// managedIdentityFailureMemory is how long a failure to get the tokens is
+// returned again without asking the endpoint. Off Azure each attempt waits for
+// the timeouts above, and Terraform starts many PowerShell workers: without
+// it, a plan would wait for one attempt per worker.
+const managedIdentityFailureMemory = time.Minute
+
+// managedIdentityCredentialOptions configures the managed identity credential.
+// nil keeps the defaults below; tests replace it to answer without the network.
+var managedIdentityCredentialOptions *azidentity.ManagedIdentityCredentialOptions
+
+// managedIdentityHint lists what to check when no token can be obtained: the
+// SDK's own message names the endpoint it tried, not what the user can fix.
+const managedIdentityHint = "Check that Terraform runs on an Azure resource with a managed identity, or on an Azure Arc-enabled server where the account running Terraform is in the himds group (Linux) or the Hybrid agent extension applications group (Windows)"
+
+// managedIdentityUserAssignedHint is added when client_id selects a
+// user-assigned identity.
+const managedIdentityUserAssignedHint = ". client_id (or TEAMS_CLIENT_ID) selects a user-assigned identity: check that it is attached to the resource, or remove it to use the system-assigned identity (Azure Arc may offer only that one)"
+
+// managedIdentityOptions returns the credential options: the bounded retries
+// and, when clientID is not empty, the user-assigned identity to use.
+func managedIdentityOptions(clientID string) azidentity.ManagedIdentityCredentialOptions {
+	var options azidentity.ManagedIdentityCredentialOptions
+	if managedIdentityCredentialOptions != nil {
+		options = *managedIdentityCredentialOptions
+	}
+	// Zero means "not set": a test can still disable retries with -1.
+	if options.Retry.MaxRetries == 0 {
+		options.Retry.MaxRetries = managedIdentityMaxRetries
+	}
+	if options.Retry.TryTimeout == 0 {
+		options.Retry.TryTimeout = managedIdentityTryTimeout
+	}
+	if clientID != "" {
+		options.ID = azidentity.ClientID(clientID)
+	}
+	return options
+}
+
+// managedIdentityTokenSource gets the access tokens for the managed identity
+// of the Azure resource or Azure Arc-enabled server running Terraform.
+type managedIdentityTokenSource struct {
+	tokens credentialTokenSource
+	now    func() time.Time // time.Now; tests replace it
+
+	// mu is a mutex: one goroutine at a time runs Token, so workers that start
+	// together wait for one request instead of each sending its own.
+	mu       sync.Mutex
+	failure  error // the last failure, returned again until failedAt + managedIdentityFailureMemory
+	failedAt time.Time
+}
+
+// NewManagedIdentityTokenSource returns a TokenSource for the system-assigned
+// managed identity, or for the user-assigned one whose client ID is clientID.
+//
+// azidentity finds the identity endpoint of the host (IMDS on a VM, the local
+// agent on Azure Arc, App Service...) and caches the tokens. It does not read
+// AZURE_CLIENT_ID: only clientID selects a user-assigned identity, so a
+// variable left in a runner for another tool cannot change the identity.
+func NewManagedIdentityTokenSource(clientID string) (TokenSource, error) {
+	options := managedIdentityOptions(clientID)
+	credential, err := azidentity.NewManagedIdentityCredential(&options)
+	if err != nil {
+		return nil, err
+	}
+	hint := managedIdentityHint
+	if clientID != "" {
+		hint += managedIdentityUserAssignedHint
+	}
+	return &managedIdentityTokenSource{
+		tokens: credentialTokenSource{credential: credential, method: "the managed identity", hint: hint},
+		now:    time.Now,
+	}, nil
+}
+
+func (s *managedIdentityTokenSource) Token(ctx context.Context) (AccessTokens, error) {
+	s.mu.Lock()
+	// defer runs when Token returns, whichever return it takes.
+	defer s.mu.Unlock()
+
+	if s.failure != nil && s.now().Sub(s.failedAt) < managedIdentityFailureMemory {
+		return AccessTokens{}, s.failure
+	}
+	tokens, err := s.tokens.Token(ctx)
+	if err != nil {
+		s.failure, s.failedAt = err, s.now()
+		return AccessTokens{}, err
+	}
+	s.failure = nil
+	return tokens, nil
 }

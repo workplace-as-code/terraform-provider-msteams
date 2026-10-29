@@ -73,7 +73,7 @@ Connection errors start with `Failed to connect to Microsoft Teams:`, followed b
 | `AADSTS700211`, `AADSTS700212` | OIDC: the issuer or the audience does not match | Check the issuer URL and the audience `api://AzureADTokenExchange` in the federated credential |
 | `AADSTS700024` | OIDC: the token has expired | Use a token file renewed by the platform instead of a fixed `oidc_token` |
 
-**Configuration errors at plan time.** `Missing certificate`, `Conflicting authentication settings`, `Conflicting certificate settings`, `Missing OIDC token` and `Missing GitHub Actions OIDC variables` come from the provider itself, before any connection: the message says which attribute or environment variable to change. A leftover `TEAMS_CERTIFICATE_*` variable in the CI environment is a common cause of the conflicts.
+**Configuration errors at plan time.** `Missing certificate`, `Conflicting authentication settings`, `Conflicting certificate settings`, `Missing OIDC token`, `Missing GitHub Actions OIDC variables` and `Invalid client_id` come from the provider itself, before any connection: the message says which attribute or environment variable to change. A leftover `TEAMS_CERTIFICATE_*` variable in the CI environment is a common cause of the conflicts.
 
 **GitHub Actions: `requesting the OIDC token from GitHub Actions failed`.** The job needs `permissions: id-token: write`. See [OIDC with GitHub Actions](https://registry.terraform.io/providers/workplace-as-code/msteams/latest/docs/guides/auth_oidc_github).
 
@@ -81,7 +81,9 @@ Connection errors start with `Failed to connect to Microsoft Teams:`, followed b
 
 **macOS: `This platform does not support loading with EphemeralKeySet`.** Fixed in version 0.1.1: upgrade the provider.
 
-The steps to create the app registration are in the [Authentication guide](https://registry.terraform.io/providers/workplace-as-code/msteams/latest/docs/guides/authentication); each method has its own guide: [certificate](https://registry.terraform.io/providers/workplace-as-code/msteams/latest/docs/guides/auth_client_certificate), [OIDC with GitHub Actions](https://registry.terraform.io/providers/workplace-as-code/msteams/latest/docs/guides/auth_oidc_github), [OIDC with any platform](https://registry.terraform.io/providers/workplace-as-code/msteams/latest/docs/guides/auth_oidc).
+The steps to create the app registration are in the [Authentication guide](https://registry.terraform.io/providers/workplace-as-code/msteams/latest/docs/guides/authentication); each method has its own guide: [certificate](https://registry.terraform.io/providers/workplace-as-code/msteams/latest/docs/guides/auth_client_certificate), [OIDC with GitHub Actions](https://registry.terraform.io/providers/workplace-as-code/msteams/latest/docs/guides/auth_oidc_github), [OIDC with any platform](https://registry.terraform.io/providers/workplace-as-code/msteams/latest/docs/guides/auth_oidc), [managed identity](https://registry.terraform.io/providers/workplace-as-code/msteams/latest/docs/guides/auth_managed_identity).
+
+**Managed identity: `obtaining the Microsoft Teams access tokens with the managed identity failed`.** Terraform does not run on an Azure resource or an Arc-enabled server with that identity, or the account running it cannot read the Arc token. See the [Managed identity guide](https://registry.terraform.io/providers/workplace-as-code/msteams/latest/docs/guides/auth_managed_identity).
 
 ## Permissions
 

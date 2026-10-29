@@ -5,7 +5,7 @@ subcategory: "Guides"
 
 # Authentication Guide
 
-The Microsoft Teams provider connects with **app-only authentication** through the MicrosoftTeams PowerShell module: an Entra ID app registration, not a user account. This page helps you choose how the provider proves who it is, then covers the setup every method shares: the app registration and its Teams role.
+The Microsoft Teams provider connects with **app-only authentication** through the MicrosoftTeams PowerShell module: an Entra ID app registration or an Azure managed identity, not a user account. This page helps you choose how the provider proves who it is, then covers the setup every method shares: the identity and its Teams role.
 
 ## Choose a Method
 
@@ -14,10 +14,12 @@ The Microsoft Teams provider connects with **app-only authentication** through t
 | Certificate: `.pfx` file, base64 content or Windows certificate store | `client_certificate` (default) | Anywhere: workstations, internal CI runners, servers | The `.pfx` and its password |
 | OIDC from GitHub Actions | `oidc_github` | GitHub Actions jobs | Nothing |
 | OIDC from another platform | `oidc` | A CI platform or cluster whose OIDC issuer Entra ID can reach over the internet | Nothing |
+| Managed identity | `managed_identity` | Azure VMs and other Azure compute, Azure Arc-enabled servers | Nothing |
 
 - **Internal CI (an on-premises GitLab or Jenkins), workstations, servers**: use a [certificate](https://registry.terraform.io/providers/workplace-as-code/msteams/latest/docs/guides/auth_client_certificate). OIDC needs Entra ID to reach the token issuer over public HTTPS.
 - **GitHub Actions**: use [`oidc_github`](https://registry.terraform.io/providers/workplace-as-code/msteams/latest/docs/guides/auth_oidc_github). Nothing to store in GitHub, nothing to renew.
 - **gitlab.com, Kubernetes, another platform with a public OIDC issuer**: use [`oidc`](https://registry.terraform.io/providers/workplace-as-code/msteams/latest/docs/guides/auth_oidc).
+- **Terraform runs on an Azure VM, a runner hosted in Azure or an Azure Arc-enabled server**: use [`managed_identity`](https://registry.terraform.io/providers/workplace-as-code/msteams/latest/docs/guides/auth_managed_identity). No app registration and nothing to store: the machine's identity connects, and its guide replaces steps 1 to 3 below.
 
 The provider does not offer client secrets.
 
@@ -49,6 +51,7 @@ Follow the guide of the method you chose:
 - [Certificate authentication](https://registry.terraform.io/providers/workplace-as-code/msteams/latest/docs/guides/auth_client_certificate): generate a certificate, upload its public key to the app, give the `.pfx` to the provider.
 - [OIDC with GitHub Actions](https://registry.terraform.io/providers/workplace-as-code/msteams/latest/docs/guides/auth_oidc_github): declare which repository and environment the app trusts.
 - [OIDC with any platform](https://registry.terraform.io/providers/workplace-as-code/msteams/latest/docs/guides/auth_oidc): declare which issuer and subject the app trusts.
+- [Managed identity](https://registry.terraform.io/providers/workplace-as-code/msteams/latest/docs/guides/auth_managed_identity): no app registration; grant the permissions to the identity instead.
 
 ## Provider Settings
 
@@ -57,7 +60,7 @@ Values set in the `provider` block take precedence over environment variables.
 | Attribute | Environment variable | Methods |
 |---|---|---|
 | `tenant_id` | `TEAMS_TENANT_ID` | All (required) |
-| `client_id` | `TEAMS_CLIENT_ID` | All (required) |
+| `client_id` | `TEAMS_CLIENT_ID` | All, required except with `managed_identity`, where it selects a user-assigned identity |
 | `auth_method` | `TEAMS_AUTH_METHOD` | All (default `client_certificate`) |
 | `certificate_path`, `certificate_base64`, `certificate_thumbprint`, `certificate_password` | `TEAMS_CERTIFICATE_*` | `client_certificate` |
 | `oidc_token`, `oidc_token_file_path` | `TEAMS_OIDC_TOKEN`, `TEAMS_OIDC_TOKEN_FILE_PATH` | `oidc` |
@@ -76,7 +79,7 @@ provider "msteams" {
 }
 ```
 
-`gcc` uses the commercial endpoints. `gcchigh` and `dod` map to `-TeamsEnvironmentName TeamsGCCH` and `TeamsDOD`, and need MicrosoftTeams module 5.0.1 or later. OIDC is only supported in the `global` and `gcc` environments for now: use a certificate in the other clouds.
+`gcc` uses the commercial endpoints. `gcchigh` and `dod` map to `-TeamsEnvironmentName TeamsGCCH` and `TeamsDOD`, and need MicrosoftTeams module 5.0.1 or later. OIDC and managed identities are only supported in the `global` and `gcc` environments for now: use a certificate in the other clouds.
 
 ## Production: Separate Read and Write Apps
 
@@ -99,4 +102,4 @@ Never commit the `.pfx` file or its password. Inject them at run time from your 
 
 ## Troubleshooting
 
-Connection errors (`AADSTS` codes), certificate, OIDC and permission problems are covered in the [Troubleshooting guide](https://registry.terraform.io/providers/workplace-as-code/msteams/latest/docs/guides/troubleshooting).
+Connection errors (`AADSTS` codes), certificate, OIDC, managed identity and permission problems are covered in the [Troubleshooting guide](https://registry.terraform.io/providers/workplace-as-code/msteams/latest/docs/guides/troubleshooting).
