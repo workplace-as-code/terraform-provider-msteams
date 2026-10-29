@@ -61,8 +61,9 @@ $ErrorActionPreference = "Stop"
         # OIDC or managed identity: the provider obtained these access tokens
         # and starts a new process before the first one expires. A token
         # already names its identity: a system-assigned managed identity has
-        # no client ID at all.
-        $connectParams = @{ TenantId = $TenantId; AccessTokens = @($graphToken, $teamsToken) }
+        # no client ID at all. The tokens also name the tenant: with -TenantId,
+        # Connect-MicrosoftTeams fails with "Not supported tenant type".
+        $connectParams = @{ AccessTokens = @($graphToken, $teamsToken) }
     } else {
         if (-not $ClientId) { throw "client_id is required" }
         $connectParams = @{

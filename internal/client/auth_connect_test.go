@@ -38,11 +38,13 @@ func TestAuthConnects(t *testing.T) {
 	}
 
 	// token-noclientid: a system-assigned managed identity has no client ID.
-	// Connect-MicrosoftTeams takes the Graph token first, then the Teams one.
+	// Connect-MicrosoftTeams takes the Graph token first, then the Teams one,
+	// and fails with "Not supported tenant type" when -TenantId comes too.
 	for _, name := range []string{"token", "token-noclientid"} {
 		t.Run(name, func(t *testing.T) {
 			r := connect(t, name)
-			if strings.Join(r.Connected.AccessTokens, ",") != "graph-1,teams-1" || r.Connected.ApplicationId != "" || r.Connected.Thumbprint != "" {
+			if strings.Join(r.Connected.AccessTokens, ",") != "graph-1,teams-1" || r.Connected.TenantId != "" ||
+				r.Connected.ApplicationId != "" || r.Connected.Thumbprint != "" {
 				t.Errorf("Connect-MicrosoftTeams got %+v", r.Connected)
 			}
 		})
