@@ -80,6 +80,8 @@ Full reference in [docs/resources](docs/resources/).
 
 Every policy resource manages either a custom policy or, with `name = "Global"`, the org-wide default policy. Assign custom policies to groups with `msteams_group_policy_assignment`.
 
+Every policy and configuration also exists as a data source, to read it without managing it: `data "msteams_meeting_policy" "global" { name = "Global" }`. Full reference in [docs/data-sources](docs/data-sources/).
+
 ### Related providers
 
 - [workplace-as-code/msexchangeonline](https://github.com/workplace-as-code/terraform-provider-msexchangeonline): Exchange Online mail flow, anti-spam, anti-phishing and Defender for Office 365, built on the same PowerShell bridge.
@@ -117,6 +119,7 @@ The PowerShell bridge scripts are embedded in the provider binary: nothing else 
 - [Detect drift in CI](docs/guides/drift_detection.md)
 - [Troubleshooting](docs/guides/troubleshooting.md)
 - [All Resources](docs/resources/)
+- [All Data Sources](docs/data-sources/)
 
 ---
 

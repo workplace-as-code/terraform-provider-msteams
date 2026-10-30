@@ -136,7 +136,7 @@ func (p *teamsProvider) ListResources(_ context.Context) []func() list.ListResou
 }
 
 func (p *teamsProvider) DataSources(_ context.Context) []func() datasource.DataSource {
-	return []func() datasource.DataSource{}
+	return resources.DataSources()
 }
 
 // envOrConfig returns the HCL config value if set, otherwise the environment
