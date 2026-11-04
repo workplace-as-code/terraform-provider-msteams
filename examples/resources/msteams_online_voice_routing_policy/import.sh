@@ -1,0 +1,1 @@
+terraform import msteams_online_voice_routing_policy.france "France"

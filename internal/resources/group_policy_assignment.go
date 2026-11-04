@@ -76,7 +76,8 @@ func (r *groupPolicyAssignmentResource) Schema(_ context.Context, _ resource.Sch
 			"policy_type": schema.StringAttribute{
 				Required: true,
 				MarkdownDescription: "Policy type, for example `TeamsMeetingPolicy`, `TeamsMessagingPolicy`, `TeamsCallingPolicy`, " +
-					"`TeamsAppSetupPolicy`, `TeamsChannelsPolicy`, `TeamsUpdateManagementPolicy`, `TeamsFeedbackPolicy` or `TeamsEventsPolicy`. " +
+					"`TeamsAppSetupPolicy`, `TeamsChannelsPolicy`, `TeamsUpdateManagementPolicy`, `TeamsFeedbackPolicy`, `TeamsEventsPolicy`, " +
+					"and for voice `TenantDialPlan`, `OnlineVoiceRoutingPolicy`, `TeamsEmergencyCallingPolicy` or `TeamsEmergencyCallRoutingPolicy`. " +
 					"A group can have one assignment per policy type.",
 				Validators:    []validator.String{stringvalidator.LengthAtLeast(1)},
 				PlanModifiers: []planmodifier.String{caseInsensitive(), stringplanmodifier.RequiresReplace()},

@@ -32,6 +32,12 @@ variable "federation_blocked_domains" {
   default     = null
 }
 
+variable "test_notification_group" {
+  description = "Email address notified by the test emergency calling policy. Empty leaves notifications off."
+  type        = string
+  default     = ""
+}
+
 variable "test_group_id" {
   description = "Object ID of an existing Entra ID group, to test group policy assignments. Leave empty to skip."
   type        = string
@@ -123,6 +129,98 @@ resource "msteams_feedback_policy" "global" {
 }
 
 # ---------------------------------------------------------------------------
+# Voice. The test tenant has no session border controller (SBC): the routes
+# carry no call. The update phase reorders the PSTN usages of the voice
+# routing policy, whose order matters.
+# ---------------------------------------------------------------------------
+
+resource "msteams_online_pstn_usage" "test" {
+  name = "TF-CI-Usage"
+}
+
+resource "msteams_online_pstn_usage" "second" {
+  name = "TF-CI-Usage2"
+}
+
+resource "msteams_tenant_dial_plan" "test" {
+  name        = "TF-CI-DialPlan"
+  description = local.description
+  normalization_rules = local.updated ? [
+    {
+      name        = "TF-CI-Extensions"
+      pattern     = "^(\\d{4})$"
+      translation = "+3314567$1"
+      description = "Extensions"
+    },
+    {
+      name                  = "TF-CI-Switchboard"
+      pattern               = "^0$"
+      translation           = "+33145670000"
+      is_internal_extension = true
+    },
+    ] : [
+    {
+      name        = "TF-CI-Extensions"
+      pattern     = "^(\\d{4})$"
+      translation = "+3314567$1"
+    },
+  ]
+}
+
+resource "msteams_online_voice_route" "test" {
+  name           = "TF-CI-Route"
+  description    = local.description
+  number_pattern = local.updated ? "^\\+33\\d{9}$" : "^\\+331\\d{8}$"
+  priority       = local.updated ? 2 : 1
+  online_pstn_usages = local.updated ? [
+    msteams_online_pstn_usage.test.name,
+    msteams_online_pstn_usage.second.name,
+  ] : [msteams_online_pstn_usage.test.name]
+}
+
+resource "msteams_online_voice_routing_policy" "test" {
+  name        = "TF-CI-VoiceRouting"
+  description = local.description
+  online_pstn_usages = local.updated ? [
+    msteams_online_pstn_usage.second.name,
+    msteams_online_pstn_usage.test.name,
+    ] : [
+    msteams_online_pstn_usage.test.name,
+    msteams_online_pstn_usage.second.name,
+  ]
+}
+
+resource "msteams_emergency_calling_policy" "test" {
+  name                          = "TF-CI-EmergencyCalling"
+  description                   = local.description
+  notification_mode             = var.test_notification_group != "" ? "NotificationOnly" : null
+  notification_group            = var.test_notification_group != "" ? var.test_notification_group : null
+  external_location_lookup_mode = local.updated ? "Disabled" : "Enabled"
+}
+
+resource "msteams_emergency_call_routing_policy" "test" {
+  name                              = "TF-CI-EmergencyRouting"
+  description                       = local.description
+  allow_enhanced_emergency_services = local.updated
+  emergency_numbers = local.updated ? [
+    {
+      dial_string = "112"
+      dial_mask   = "15;17;18"
+      pstn_usage  = msteams_online_pstn_usage.test.name
+    },
+    {
+      dial_string = "911"
+      pstn_usage  = msteams_online_pstn_usage.second.name
+    },
+    ] : [
+    {
+      dial_string = "112"
+      pstn_usage  = msteams_online_pstn_usage.test.name
+    },
+  ]
+}
+
+# ---------------------------------------------------------------------------
 # Group policy assignment, when a test group is given
 # ---------------------------------------------------------------------------
 
@@ -131,6 +229,15 @@ resource "msteams_group_policy_assignment" "test" {
   group_id    = var.test_group_id
   policy_type = "TeamsMeetingPolicy"
   policy_name = msteams_meeting_policy.test.name
+  rank        = 1
+}
+
+# A voice policy type: group assignment covers them too.
+resource "msteams_group_policy_assignment" "voice" {
+  count       = var.test_group_id != "" ? 1 : 0
+  group_id    = var.test_group_id
+  policy_type = "OnlineVoiceRoutingPolicy"
+  policy_name = msteams_online_voice_routing_policy.test.name
   rank        = 1
 }
 

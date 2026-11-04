@@ -39,7 +39,7 @@ variable "sales_group_id" {
 
 - `group_id` (String) Object ID of the Entra ID group: security group, distribution list or Microsoft 365 group.
 - `policy_name` (String) Name of the policy to assign, for example `msteams_meeting_policy.example.name`.
-- `policy_type` (String) Policy type, for example `TeamsMeetingPolicy`, `TeamsMessagingPolicy`, `TeamsCallingPolicy`, `TeamsAppSetupPolicy`, `TeamsChannelsPolicy`, `TeamsUpdateManagementPolicy`, `TeamsFeedbackPolicy` or `TeamsEventsPolicy`. A group can have one assignment per policy type.
+- `policy_type` (String) Policy type, for example `TeamsMeetingPolicy`, `TeamsMessagingPolicy`, `TeamsCallingPolicy`, `TeamsAppSetupPolicy`, `TeamsChannelsPolicy`, `TeamsUpdateManagementPolicy`, `TeamsFeedbackPolicy`, `TeamsEventsPolicy`, and for voice `TenantDialPlan`, `OnlineVoiceRoutingPolicy`, `TeamsEmergencyCallingPolicy` or `TeamsEmergencyCallRoutingPolicy`. A group can have one assignment per policy type.
 - `rank` (Number) Priority of this assignment over the other group assignments of the same policy type. `1` wins over every other rank.
 
 ### Read-Only

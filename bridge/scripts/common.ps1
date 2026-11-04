@@ -88,3 +88,83 @@ function Invoke-BridgeWrite {
         }
     }
 }
+
+# Invoke-BridgeBlockObject runs the actions of cs_object.ps1 for a Teams object
+# with block lists: lists of objects that Teams builds in memory, such as the
+# normalization rules of a dial plan. $Blocks maps each block parameter to
+# Build, a script block that makes one object from a hashtable of its
+# parameters, and Fields, the properties read back. A block list is written as
+# an array, which replaces the whole list in its order; an empty one clears it.
+function Invoke-BridgeBlockObject {
+    param([string]$Action, [string]$Noun, [string]$Identity, [string]$Values, [string]$Properties, [hashtable]$Blocks)
+
+    $splat = @{}
+    $raw = ConvertFrom-BridgeJson $Values
+    if ($null -ne $raw) {
+        foreach ($p in $raw.PSObject.Properties) {
+            $v = $p.Value
+            if ($Blocks.ContainsKey($p.Name)) {
+                $build = $Blocks[$p.Name].Build
+                $v = @(foreach ($item in @($v)) {
+                    if ($null -eq $item) { continue }
+                    $params = @{}
+                    foreach ($f in $item.PSObject.Properties) { $params[$f.Name] = $f.Value }
+                    & $build $params
+                })
+            } elseif ($v -is [array]) {
+                $v = if ($v.Count -gt 0) { [string[]]$v } else { $null }
+            }
+            $splat[$p.Name] = $v
+        }
+    }
+    $props = @(ConvertFrom-BridgeJson $Properties)
+
+    $read = {
+        $object = & "Get-$Noun" -Identity $Identity -ErrorAction Stop
+        $out = [ordered]@{ Name = ([string](Get-BridgeProp $object "Identity")) -replace '^Tag:', '' }
+        foreach ($p in $props) {
+            $value = Get-BridgeProp $object $p
+            if ($Blocks.ContainsKey($p)) {
+                $out[$p] = @(foreach ($item in @($value)) {
+                    if ($null -eq $item) { continue }
+                    $fields = [ordered]@{}
+                    foreach ($f in $Blocks[$p].Fields) { $fields[$f] = ConvertTo-BridgeValue (Get-BridgeProp $item $f) }
+                    [pscustomobject]$fields
+                })
+            } else {
+                $out[$p] = ConvertTo-BridgeValue $value
+            }
+        }
+        ConvertTo-Json -Compress -Depth 5 -InputObject $out
+    }
+
+    switch ($Action) {
+        "Get" {
+            try { & $read } catch {
+                if (Test-BridgeNotFound $_.Exception.Message) { return }
+                throw
+            }
+        }
+        "Create" {
+            if ($Identity -eq "Global") {
+                if ($splat.Count -gt 0) { Invoke-BridgeWrite { & "Set-$Noun" -Identity $Identity @splat } | Out-Null }
+            } else {
+                Invoke-BridgeWrite { & "New-$Noun" -Identity $Identity @splat } | Out-Null
+            }
+            & $read
+        }
+        "Update" {
+            if ($splat.Count -gt 0) { Invoke-BridgeWrite { & "Set-$Noun" -Identity $Identity @splat } | Out-Null }
+            & $read
+        }
+        "Delete" {
+            if ($Identity -eq "Global") { throw "The Global $Noun cannot be deleted." }
+            try {
+                Invoke-BridgeWrite { & "Remove-$Noun" -Identity $Identity } | Out-Null
+            } catch {
+                if (-not (Test-BridgeNotFound $_.Exception.Message)) { throw }
+            }
+            "{}"
+        }
+    }
+}

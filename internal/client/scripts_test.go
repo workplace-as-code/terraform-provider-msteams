@@ -47,6 +47,27 @@ function global:Get-CsTeamsClientConfiguration { param([string]$Identity) $globa
 function global:Set-CsTeamsClientConfiguration { param([string]$Identity, [string]$ContentPin, [bool]$AllowGuestUser)
     $global:calls.Add(@{ cmd = "SetClient"; params = @($PSBoundParameters.Keys | Sort-Object) })
     if ($PSBoundParameters.ContainsKey("ContentPin")) { $global:clientConfig.ContentPin = $ContentPin } }
+$global:dialPlans = @{}
+$global:pstnUsages = [System.Collections.Generic.List[string]]::new()
+function global:New-CsVoiceNormalizationRule {
+    param([string]$Parent, [switch]$InMemory, [string]$Name, [string]$Pattern, [string]$Translation, [string]$Description, [bool]$IsInternalExtension)
+    [pscustomobject]@{ Name = $Name; Pattern = $Pattern; Translation = $Translation; Description = "$Description"; IsInternalExtension = $IsInternalExtension }
+}
+function global:New-CsTenantDialPlan { param([string]$Identity, [string]$Description, [object[]]$NormalizationRules)
+    $global:dialPlans[$Identity] = [pscustomobject]@{ Identity = "Tag:$Identity"; Description = "$Description"; NormalizationRules = @($NormalizationRules) } }
+function global:Get-CsTenantDialPlan { param([string]$Identity)
+    if (-not $Identity) { return @($global:dialPlans.Values) }
+    if (-not $global:dialPlans.ContainsKey($Identity)) { throw """$Identity"" not found" }
+    $global:dialPlans[$Identity] }
+function global:Set-CsTenantDialPlan { param([string]$Identity, [string]$Description, [object[]]$NormalizationRules)
+    if ($PSBoundParameters.ContainsKey("NormalizationRules")) { $global:dialPlans[$Identity].NormalizationRules = @($NormalizationRules) } }
+function global:Remove-CsTenantDialPlan { param([string]$Identity)
+    if (-not $global:dialPlans.ContainsKey($Identity)) { throw """$Identity"" not found" }
+    $global:dialPlans.Remove($Identity) }
+function global:Get-CsOnlinePstnUsage { param([string]$Identity) [pscustomobject]@{ Identity = "Global"; Usage = @($global:pstnUsages) } }
+function global:Set-CsOnlinePstnUsage { param([string]$Identity, [hashtable]$Usage)
+    if ($Usage.ContainsKey("Add")) { $global:pstnUsages.Add($Usage.Add) }
+    if ($Usage.ContainsKey("Remove")) { [void]$global:pstnUsages.Remove($Usage.Remove) } }
 '{}'
 `
 
@@ -171,6 +192,55 @@ func TestTeamsScriptsWithStubbedCmdlets(t *testing.T) {
 	}
 	if c := lastCall(); c.Cmd != "SetClient" || len(c.Params) != 2 {
 		t.Errorf("Set-CsTeamsClientConfiguration called with %v, want only ContentPin and Identity", c)
+	}
+
+	// A dial plan writes its normalization rules as objects built in memory, in
+	// order, and reads them back as a list, even with one rule.
+	type rule struct{ Name, Pattern, Translation, Description string }
+	var plan struct {
+		Name               string
+		NormalizationRules []rule
+	}
+	rules := []map[string]any{
+		{"Name": "Extensions", "Pattern": `^(\d{4})$`, "Translation": "+3314567$1"},
+		{"Name": "Operator", "Pattern": `^0$`, "Translation": "+33145670000"},
+	}
+	const dialPlan = "CsTenantDialPlan"
+	out = run("tenant_dial_plan.ps1", obj("Create", dialPlan, "Paris", map[string]any{"NormalizationRules": rules}, "NormalizationRules"))
+	if err := json.Unmarshal([]byte(out), &plan); err != nil || plan.Name != "Paris" || len(plan.NormalizationRules) != 2 ||
+		plan.NormalizationRules[0].Name != "Extensions" || plan.NormalizationRules[0].Translation != "+3314567$1" {
+		t.Errorf("dial plan create output %q: %v", out, err)
+	}
+	out = run("tenant_dial_plan.ps1", obj("Update", dialPlan, "Paris", map[string]any{"NormalizationRules": rules[1:]}, "NormalizationRules"))
+	if err := json.Unmarshal([]byte(out), &plan); err != nil || len(plan.NormalizationRules) != 1 || plan.NormalizationRules[0].Name != "Operator" {
+		t.Errorf("dial plan with one rule %q: %v, want a list of one rule", out, err)
+	}
+	out = run("tenant_dial_plan.ps1", obj("Update", dialPlan, "Paris", map[string]any{"NormalizationRules": []any{}}, "NormalizationRules"))
+	if err := json.Unmarshal([]byte(out), &plan); err != nil || len(plan.NormalizationRules) != 0 {
+		t.Errorf("dial plan without rules %q: %v", out, err)
+	}
+	if out := run("tenant_dial_plan.ps1", obj("Get", dialPlan, "Missing", nil, "NormalizationRules")); !IsNotFound([]byte(out)) {
+		t.Errorf("Get on a missing dial plan returned %q, want empty output", out)
+	}
+	run("tenant_dial_plan.ps1", obj("Delete", dialPlan, "Paris", nil))
+
+	// A PSTN usage is an entry of the tenant's single list.
+	usage := func(action string) string {
+		return run("online_pstn_usage.ps1", map[string]string{"Action": action, "Name": "France"})
+	}
+	if out := usage("Get"); !IsNotFound([]byte(out)) {
+		t.Errorf("Get on a missing usage returned %q", out)
+	}
+	if out := usage("Create"); out != `{"Name":"France"}` {
+		t.Errorf("usage create returned %q", out)
+	}
+	if err := json.Unmarshal([]byte(run("list.ps1", map[string]string{"Noun": "CsOnlinePstnUsage"})), &ids); err != nil || strings.Join(ids, ",") != "France" {
+		t.Errorf("list.ps1 returned %v (%v), want [France]", ids, err)
+	}
+	usage("Delete")
+	usage("Delete")
+	if out := usage("Get"); !IsNotFound([]byte(out)) {
+		t.Errorf("the usage is still there after Delete: %q", out)
 	}
 }
 

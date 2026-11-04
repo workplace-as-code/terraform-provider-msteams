@@ -129,6 +129,20 @@ func dataSourceAttribute(key bool, a schema.Attribute) (dsschema.Attribute, erro
 		return dsschema.ListAttribute{Computed: true, ElementType: a.ElementType, Sensitive: a.Sensitive, MarkdownDescription: desc}, nil
 	case schema.SetAttribute:
 		return dsschema.SetAttribute{Computed: true, ElementType: a.ElementType, Sensitive: a.Sensitive, MarkdownDescription: desc}, nil
+	case schema.ListNestedAttribute:
+		nested := map[string]dsschema.Attribute{}
+		for name, sub := range a.NestedObject.Attributes {
+			converted, err := dataSourceAttribute(false, sub)
+			if err != nil {
+				return nil, err
+			}
+			nested[name] = converted
+		}
+		return dsschema.ListNestedAttribute{
+			Computed:            true,
+			MarkdownDescription: desc,
+			NestedObject:        dsschema.NestedAttributeObject{Attributes: nested},
+		}, nil
 	}
 	return nil, fmt.Errorf("%T has no data source equivalent", a)
 }

@@ -1,0 +1,43 @@
+---
+page_title: "{{.Name}} ({{.Type}}) - {{.ProviderName}}"
+subcategory: "Voice"
+description: |-
+{{ .Description | plainmarkdown | trimspace | prefixlines "  " }}
+---
+
+# {{.Name}} ({{.Type}})
+
+{{ .Description | trimspace }}
+
+## Example Usage
+
+{{ tffile .ExampleFile }}
+
+{{ .SchemaMarkdown | trimspace }}
+
+## Permissions
+
+The provider's app registration needs the **Teams Administrator** Entra ID role. See the [Authentication guide](https://registry.terraform.io/providers/workplace-as-code/msteams/latest/docs/guides/authentication).
+
+## Microsoft documentation
+
+- [`New-CsTeamsEmergencyCallingPolicy`](https://learn.microsoft.com/powershell/module/msteams/new-csteamsemergencycallingpolicy?view=teams-ps)
+- [`Get-CsTeamsEmergencyCallingPolicy`](https://learn.microsoft.com/powershell/module/msteams/get-csteamsemergencycallingpolicy?view=teams-ps)
+- [`Set-CsTeamsEmergencyCallingPolicy`](https://learn.microsoft.com/powershell/module/msteams/set-csteamsemergencycallingpolicy?view=teams-ps)
+- [`Remove-CsTeamsEmergencyCallingPolicy`](https://learn.microsoft.com/powershell/module/msteams/remove-csteamsemergencycallingpolicy?view=teams-ps)
+
+## Import
+
+Import using the policy name. The `Tag:` prefix is accepted, and `Global` imports the org-wide default policy:
+
+{{ tffile .ImportIDConfigFile }}
+
+Or by identity (Terraform 1.12 and later):
+
+{{ tffile .ImportIdentityConfigFile }}
+
+Or with the CLI:
+
+{{ codefile "shell" .ImportFile }}
+
+To import every existing object at once, see [Import an existing tenant](https://registry.terraform.io/providers/workplace-as-code/msteams/latest/docs/guides/import_existing).

@@ -162,3 +162,39 @@ data "msteams_tenant_federation_configuration" "this" {
     }
   }
 }
+
+data "msteams_tenant_dial_plan" "test" {
+  name       = msteams_tenant_dial_plan.test.name
+  depends_on = [msteams_tenant_dial_plan.test]
+
+  lifecycle {
+    postcondition {
+      condition     = self.id == msteams_tenant_dial_plan.test.id
+      error_message = "The data source read another object than the test one."
+    }
+  }
+}
+
+data "msteams_online_voice_route" "test" {
+  name       = msteams_online_voice_route.test.name
+  depends_on = [msteams_online_voice_route.test]
+
+  lifecycle {
+    postcondition {
+      condition     = self.id == msteams_online_voice_route.test.id
+      error_message = "The data source read another object than the test one."
+    }
+  }
+}
+
+data "msteams_emergency_call_routing_policy" "test" {
+  name       = msteams_emergency_call_routing_policy.test.name
+  depends_on = [msteams_emergency_call_routing_policy.test]
+
+  lifecycle {
+    postcondition {
+      condition     = self.id == msteams_emergency_call_routing_policy.test.id
+      error_message = "The data source read another object than the test one."
+    }
+  }
+}

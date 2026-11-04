@@ -143,9 +143,17 @@ CREATED=(
   "msteams_update_management_policy.test=TF-CI-Updates"
   "msteams_feedback_policy.test=TF-CI-Feedback"
   "msteams_events_policy.test=TF-CI-Events"
+  "msteams_tenant_dial_plan.test=TF-CI-DialPlan"
+  "msteams_online_voice_route.test=TF-CI-Route"
+  "msteams_online_voice_routing_policy.test=TF-CI-VoiceRouting"
+  "msteams_emergency_calling_policy.test=TF-CI-EmergencyCalling"
+  "msteams_emergency_call_routing_policy.test=TF-CI-EmergencyRouting"
+  "msteams_online_pstn_usage.test=TF-CI-Usage"
+  "msteams_online_pstn_usage.second=TF-CI-Usage2"
 )
 if [[ -n "${TF_VAR_test_group_id:-}" ]]; then
-  CREATED=("msteams_group_policy_assignment.test[0]=$TF_VAR_test_group_id/TeamsMeetingPolicy" "${CREATED[@]}")
+  CREATED=("msteams_group_policy_assignment.test[0]=$TF_VAR_test_group_id/TeamsMeetingPolicy"
+    "msteams_group_policy_assignment.voice[0]=$TF_VAR_test_group_id/OnlineVoiceRoutingPolicy" "${CREATED[@]}")
 fi
 # Objects imported by main.tf and never destroyed.
 KEEP=(

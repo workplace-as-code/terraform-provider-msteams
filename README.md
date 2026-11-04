@@ -74,6 +74,7 @@ Full reference in [docs/resources](docs/resources/).
 | Area | Resources |
 |---|---|
 | Policies | `msteams_messaging_policy`, `msteams_meeting_policy`, `msteams_calling_policy`, `msteams_app_setup_policy`, `msteams_channels_policy`, `msteams_update_management_policy`, `msteams_feedback_policy`, `msteams_events_policy` |
+| Voice | `msteams_tenant_dial_plan`, `msteams_online_pstn_usage`, `msteams_online_voice_route`, `msteams_online_voice_routing_policy`, `msteams_emergency_calling_policy`, `msteams_emergency_call_routing_policy` |
 | Policy assignment | `msteams_group_policy_assignment` |
 | External and guest access | `msteams_tenant_federation_configuration`, `msteams_guest_messaging_configuration`, `msteams_guest_meeting_configuration`, `msteams_guest_calling_configuration` |
 | Tenant-wide settings | `msteams_client_configuration`, `msteams_meeting_configuration` |
