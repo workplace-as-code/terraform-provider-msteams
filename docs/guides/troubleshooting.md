@@ -138,8 +138,10 @@ Running the script that failed, outside Terraform, shows the full PowerShell err
    ./list.ps1 @auth -Noun CsTeamsMessagingPolicy
 
    # Reads one policy, as terraform plan does
-   $properties = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes('["AllowGiphy","AllowMemes"]'))
-   ./cs_object.ps1 @auth -Action Get -Noun CsTeamsMessagingPolicy -Identity Students -Properties $properties
+   $json = '["AllowGiphy","AllowMemes"]'
+   $properties = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($json))
+   ./cs_object.ps1 @auth -Action Get -Noun CsTeamsMessagingPolicy -Identity Students `
+       -Properties $properties
    ```
 
    `-Noun` is the noun of the Teams cmdlets of the resource, listed in its documentation (`Get-CsTeamsMessagingPolicy` → `CsTeamsMessagingPolicy`). A read prints one line of JSON; an empty output means that the object does not exist.

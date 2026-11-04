@@ -6,6 +6,7 @@ import (
 	"regexp"
 	"strings"
 	"testing"
+	"unicode/utf8"
 )
 
 // The documentation is published on the Terraform Registry, which serves the
@@ -51,6 +52,38 @@ func TestDocsLinks(t *testing.T) {
 				strings.HasPrefix(link, "mailto:"), strings.HasPrefix(link, "#"):
 			default:
 				t.Errorf("%s: relative link %q: use %s/...", name, link, registryDocs)
+			}
+		}
+	}
+}
+
+// maxCodeLine is the widest code line the Registry shows: it does not scroll
+// code blocks, so a longer line runs past the block and is cut off.
+const maxCodeLine = 100
+
+func TestDocsCodeLines(t *testing.T) {
+	pages, err := filepath.Glob("../../docs/*.md")
+	if err != nil {
+		t.Fatal(err)
+	}
+	more, err := filepath.Glob("../../docs/*/*.md")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, page := range append(pages, more...) {
+		data, err := os.ReadFile(page)
+		if err != nil {
+			t.Fatal(err)
+		}
+		inCode := false
+		for i, line := range strings.Split(string(data), "\n") {
+			if strings.HasPrefix(strings.TrimSpace(line), "```") {
+				inCode = !inCode
+				continue
+			}
+			if inCode && utf8.RuneCountInString(line) > maxCodeLine {
+				t.Errorf("%s:%d: code line of %d characters, split it to %d at most",
+					strings.TrimPrefix(page, "../../"), i+1, utf8.RuneCountInString(line), maxCodeLine)
 			}
 		}
 	}
