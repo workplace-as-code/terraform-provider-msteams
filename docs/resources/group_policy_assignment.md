@@ -79,7 +79,8 @@ import {
 Or with the CLI:
 
 ```shell
-terraform import msteams_group_policy_assignment.example "00000000-0000-0000-0000-000000000000/TeamsMeetingPolicy"
+terraform import msteams_group_policy_assignment.example \
+  "00000000-0000-0000-0000-000000000000/TeamsMeetingPolicy"
 ```
 
 To import every existing object at once, see [Import an existing tenant](https://registry.terraform.io/providers/workplace-as-code/msteams/latest/docs/guides/import_existing).
