@@ -171,7 +171,8 @@ resource "msteams_online_voice_route" "test" {
   name           = "TF-CI-Route"
   description    = local.description
   number_pattern = local.updated ? "^\\+33\\d{9}$" : "^\\+331\\d{8}$"
-  priority       = local.updated ? 2 : 1
+  # A position in the tenant's list of routes, after LocalRoute, then before it.
+  priority = local.updated ? 0 : 1
   online_pstn_usages = local.updated ? [
     msteams_online_pstn_usage.test.name,
     msteams_online_pstn_usage.second.name,

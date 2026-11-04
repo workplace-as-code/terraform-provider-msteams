@@ -39,7 +39,7 @@ resource "msteams_online_voice_route" "france" {
 - `number_pattern` (String) Regular expression of the called numbers, for example `^\+33\d{9}$`.
 - `online_pstn_gateways` (List of String) FQDNs of the session border controllers (SBC) of the route, as registered with `New-CsOnlinePSTNGateway`.
 - `online_pstn_usages` (List of String) PSTN usages the route belongs to.
-- `priority` (Number) Order of the routes of a PSTN usage that match a number: 0 first.
+- `priority` (Number) Position of the route in the tenant's list of voice routes, 0 first: the first route of a PSTN usage that matches the number takes the call. Teams keeps the positions consecutive: a value past the last route makes it the last one, and removing a route moves the next ones up. Manage all the routes in the same configuration.
 
 ### Read-Only
 

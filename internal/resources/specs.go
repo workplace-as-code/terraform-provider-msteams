@@ -219,7 +219,10 @@ var objectSpecs = []objectSpec{
 		fields: []field{
 			stringAttr("description", "Description", "Description of the route."),
 			stringAttr("number_pattern", "NumberPattern", "Regular expression of the called numbers, for example `^\\+33\\d{9}$`."),
-			int64Attr("priority", "Priority", "Order of the routes of a PSTN usage that match a number: 0 first."),
+			int64Attr("priority", "Priority", "Position of the route in the tenant's list of voice routes, 0 first: the first "+
+				"route of a PSTN usage that matches the number takes the call. Teams keeps the positions consecutive: a value past "+
+				"the last route makes it the last one, and removing a route moves the next ones up. Manage all the routes in the "+
+				"same configuration."),
 			listAttr("online_pstn_usages", "OnlinePstnUsages", "PSTN usages the route belongs to."),
 			listAttr("online_pstn_gateways", "OnlinePstnGatewayList", "FQDNs of the session border controllers (SBC) of the route, "+
 				"as registered with `New-CsOnlinePSTNGateway`."),
