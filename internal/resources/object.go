@@ -13,6 +13,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
+	"github.com/hashicorp/terraform-plugin-framework/resource/schema/listplanmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringplanmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/schema/validator"
@@ -45,6 +46,9 @@ const (
 	int64Field
 	enumField
 	listField
+	// blockListField is an ordered list of objects, each a set of sub-fields
+	// (normalization rules of a dial plan, emergency numbers).
+	blockListField
 )
 
 // field maps one Terraform attribute to one cmdlet parameter and property.
@@ -55,6 +59,8 @@ type field struct {
 	desc       string
 	values     []string // enumField only
 	validators []validator.Int64
+	blocks     []field // blockListField only: the fields of each object
+	required   bool    // sub-field of a block: required in each object
 }
 
 func boolAttr(name, param, desc string) field {
@@ -71,6 +77,18 @@ func int64Attr(name, param, desc string, validators ...validator.Int64) field {
 
 func listAttr(name, param, desc string) field {
 	return field{name: name, param: param, kind: listField, desc: desc}
+}
+
+// blockListAttr is an ordered list of objects whose fields are blocks. In each
+// object, a required field must be set; the others are optional and take the
+// Teams value when left out.
+func blockListAttr(name, param, desc string, blocks ...field) field {
+	return field{name: name, param: param, kind: blockListField, desc: desc, blocks: blocks}
+}
+
+// requiredString is a block field that each object must set.
+func requiredString(name, param, desc string) field {
+	return field{name: name, param: param, kind: stringField, desc: desc, required: true}
 }
 
 // enumAttr is a string restricted to values, compared without regard to case.
@@ -90,8 +108,12 @@ type objectSpec struct {
 	noun        string // cmdlet noun, e.g. "CsTeamsMeetingPolicy"
 	script      string // bridge script; "" means cs_object.ps1
 	singleton   bool   // configuration with a single "Global" object
+	noGlobal    bool   // named object without an org-wide "Global" one (voice routes)
 	description string // first sentence of the resource documentation
 	fields      []field
+	// validate checks the configured values at plan time, for rules Teams
+	// enforces only when the change is applied. Unknown values are not checked.
+	validate func(cfg map[string]attr.Value, diags *diag.Diagnostics)
 }
 
 // listQuery lists the policies; a configuration has the single ID "Global".
@@ -128,9 +150,20 @@ func (f field) attrType() attr.Type {
 		return types.Int64Type
 	case listField:
 		return types.ListType{ElemType: types.StringType}
+	case blockListField:
+		return types.ListType{ElemType: f.blockType()}
 	default:
 		return types.StringType
 	}
+}
+
+// blockType is the object type of one element of a blockListField.
+func (f field) blockType() types.ObjectType {
+	attrTypes := map[string]attr.Type{}
+	for _, b := range f.blocks {
+		attrTypes[b.name] = b.attrType()
+	}
+	return types.ObjectType{AttrTypes: attrTypes}
 }
 
 func (f field) schemaAttribute() schema.Attribute {
@@ -143,8 +176,32 @@ func (f field) schemaAttribute() schema.Attribute {
 		return optionalEnum(f.desc, f.values...)
 	case listField:
 		return optionalList(f.desc)
+	case blockListField:
+		nested := map[string]schema.Attribute{}
+		for _, b := range f.blocks {
+			nested[b.name] = b.blockAttribute()
+		}
+		return schema.ListNestedAttribute{
+			Optional:            true,
+			Computed:            true,
+			MarkdownDescription: f.desc,
+			NestedObject:        schema.NestedAttributeObject{Attributes: nested},
+			PlanModifiers:       []planmodifier.List{listplanmodifier.UseStateForUnknown()},
+		}
 	default:
 		return optionalString(f.desc)
+	}
+}
+
+// blockAttribute is the schema of a field inside a block: required, or
+// optional and computed (Terraform keeps the value Teams returned while the
+// configuration leaves it out).
+func (f field) blockAttribute() schema.Attribute {
+	switch f.kind {
+	case boolField:
+		return schema.BoolAttribute{Optional: !f.required, Required: f.required, Computed: !f.required, MarkdownDescription: f.desc}
+	default:
+		return schema.StringAttribute{Optional: !f.required, Required: f.required, Computed: !f.required, MarkdownDescription: f.desc}
 	}
 }
 
@@ -155,8 +212,9 @@ type objectResource struct {
 }
 
 var (
-	_ resource.Resource                = &objectResource{}
-	_ resource.ResourceWithImportState = &objectResource{}
+	_ resource.Resource                   = &objectResource{}
+	_ resource.ResourceWithImportState    = &objectResource{}
+	_ resource.ResourceWithValidateConfig = &objectResource{}
 )
 
 // newObjectResource returns the factory registered in the provider.
@@ -186,11 +244,15 @@ func (r *objectResource) Schema(_ context.Context, _ resource.SchemaRequest, res
 			MarkdownDescription: "The policy name (same as `name`).",
 			PlanModifiers:       []planmodifier.String{stringplanmodifier.UseStateForUnknown()},
 		}
+		nameDesc := "The policy name. Changing it creates a new policy. `Global` manages the org-wide default policy: " +
+			"it is adopted instead of created, and destroying the resource only removes it from Terraform state."
+		if r.spec.noGlobal {
+			nameDesc = "The name. Changing it creates a new object."
+		}
 		attrs["name"] = schema.StringAttribute{
-			Required: true,
-			MarkdownDescription: "The policy name. Changing it creates a new policy. `Global` manages the org-wide default policy: " +
-				"it is adopted instead of created, and destroying the resource only removes it from Terraform state.",
-			Validators: []validator.String{stringvalidator.LengthAtLeast(1)},
+			Required:            true,
+			MarkdownDescription: nameDesc,
+			Validators:          []validator.String{stringvalidator.LengthAtLeast(1)},
 			// Teams policy names are case-insensitive: a case-only change is not a new policy.
 			PlanModifiers: []planmodifier.String{caseInsensitive(), stringplanmodifier.RequiresReplace()},
 		}
@@ -201,6 +263,18 @@ func (r *objectResource) Schema(_ context.Context, _ resource.SchemaRequest, res
 		attrs[f.name] = f.schemaAttribute()
 	}
 	resp.Schema = schema.Schema{MarkdownDescription: desc, Attributes: attrs}
+}
+
+func (r *objectResource) ValidateConfig(ctx context.Context, req resource.ValidateConfigRequest, resp *resource.ValidateConfigResponse) {
+	if r.spec.validate == nil {
+		return
+	}
+	var config types.Object
+	resp.Diagnostics.Append(req.Config.Get(ctx, &config)...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+	r.spec.validate(config.Attributes(), &resp.Diagnostics)
 }
 
 func (r *objectResource) Configure(_ context.Context, req resource.ConfigureRequest, resp *resource.ConfigureResponse) {
@@ -358,6 +432,10 @@ func (r *objectResource) write(ctx context.Context, action string, plan, config 
 		case types.String:
 			values[f.param] = tv.ValueString()
 		case types.List:
+			if f.kind == blockListField {
+				values[f.param] = blockValues(f, tv)
+				continue
+			}
 			items := []string{}
 			diags.Append(tv.ElementsAs(ctx, &items, false)...)
 			values[f.param] = items
@@ -412,6 +490,10 @@ func (r *objectResource) fromAPI(prior types.Object, output []byte) (types.Objec
 			values[f.name] = types.Int64Value(int64(n))
 		case listField:
 			values[f.name] = listValue(toStrings(raw))
+		case blockListField:
+			list, d := blockListValue(f, raw)
+			diags.Append(d...)
+			values[f.name] = list
 		case enumField:
 			s, _ := raw.(string)
 			priorValue, _ := priorAttrs[f.name].(types.String)
@@ -424,6 +506,68 @@ func (r *objectResource) fromAPI(prior types.Object, output []byte) (types.Objec
 	obj, d := types.ObjectValue(r.spec.attrTypes(), values)
 	diags.Append(d...)
 	return obj, diags
+}
+
+// blockValues converts a list of blocks to the objects sent to the bridge,
+// keyed by cmdlet parameter. A field left out (null) or not known yet is not
+// sent: Teams applies its default.
+func blockValues(f field, list types.List) []map[string]any {
+	out := []map[string]any{}
+	for _, elem := range list.Elements() {
+		obj, ok := elem.(types.Object)
+		if !ok {
+			continue
+		}
+		item := map[string]any{}
+		for _, b := range f.blocks {
+			switch v := obj.Attributes()[b.name].(type) {
+			case types.String:
+				if !v.IsNull() && !v.IsUnknown() {
+					item[b.param] = v.ValueString()
+				}
+			case types.Bool:
+				if !v.IsNull() && !v.IsUnknown() {
+					item[b.param] = v.ValueBool()
+				}
+			}
+		}
+		out = append(out, item)
+	}
+	return out
+}
+
+// blockListValue converts the objects returned by the bridge to a list of
+// blocks. PowerShell can unwrap a one-element array to the object itself.
+func blockListValue(f field, raw any) (types.List, diag.Diagnostics) {
+	var items []any
+	switch v := raw.(type) {
+	case []any:
+		items = v
+	case map[string]any:
+		items = []any{v}
+	}
+	elems := make([]attr.Value, 0, len(items))
+	var diags diag.Diagnostics
+	for _, item := range items {
+		m, _ := item.(map[string]any)
+		values := map[string]attr.Value{}
+		for _, b := range f.blocks {
+			switch b.kind {
+			case boolField:
+				v, _ := m[b.param].(bool)
+				values[b.name] = types.BoolValue(v)
+			default:
+				v, _ := m[b.param].(string)
+				values[b.name] = types.StringValue(v)
+			}
+		}
+		obj, d := types.ObjectValue(f.blockType().AttrTypes, values)
+		diags.Append(d...)
+		elems = append(elems, obj)
+	}
+	list, d := types.ListValue(f.blockType(), elems)
+	diags.Append(d...)
+	return list, diags
 }
 
 // toStrings converts a JSON array (or a single value) to strings. PowerShell

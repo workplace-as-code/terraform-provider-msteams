@@ -17,6 +17,8 @@ func registrations() []registration {
 	regs := []registration{
 		// list.ps1 returns "<group_id>/<policy_type>".
 		{NewGroupPolicyAssignmentResource, listQuery{noun: "CsGroupPolicyAssignment"}},
+		// list.ps1 returns the usages of the tenant's single list.
+		{NewOnlinePstnUsageResource, listQuery{noun: "CsOnlinePstnUsage"}},
 	}
 	for _, spec := range objectSpecs {
 		regs = append(regs, registration{newObjectResource(spec), spec.listQuery()})

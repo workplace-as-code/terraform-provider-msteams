@@ -5,7 +5,7 @@
 #
 # Policies are returned by name ("Global" for the org-wide policy, without the
 # "Tag:" prefix of custom policies); group policy assignments as
-# "<group_id>/<policy_type>". Output: JSON array of strings.
+# "<group_id>/<policy_type>", PSTN usages by name. Output: JSON array of strings.
 
 param(
     [string]$TenantId              = "",
@@ -29,6 +29,9 @@ try {
         foreach ($object in @(& "Get-$Noun")) {
             if ($Noun -eq "CsGroupPolicyAssignment") {
                 "$(Get-BridgeProp $object 'GroupId' '')/$(Get-BridgeProp $object 'PolicyType' '')"
+            } elseif ($Noun -eq "CsOnlinePstnUsage") {
+                # One object holds every usage of the tenant.
+                @(Get-BridgeProp $object "Usage" @()) | ForEach-Object { "$_" }
             } else {
                 ([string](Get-BridgeProp $object "Identity" "")) -replace '^Tag:', ''
             }

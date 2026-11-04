@@ -1,6 +1,14 @@
 package resources
 
-import "github.com/hashicorp/terraform-plugin-framework-validators/int64validator"
+import (
+	"strings"
+
+	"github.com/hashicorp/terraform-plugin-framework-validators/int64validator"
+	"github.com/hashicorp/terraform-plugin-framework/attr"
+	"github.com/hashicorp/terraform-plugin-framework/diag"
+	"github.com/hashicorp/terraform-plugin-framework/path"
+	"github.com/hashicorp/terraform-plugin-framework/types"
+)
 
 // Parameter names are the ones of the Set-<noun> cmdlet (checked against the
 // MicrosoftTeams module), not guesses: a wrong name fails every apply.
@@ -180,6 +188,94 @@ var objectSpecs = []objectSpec{
 	},
 
 	// -----------------------------------------------------------------------
+	// Voice
+	// -----------------------------------------------------------------------
+	{
+		typeName: "tenant_dial_plan",
+		noun:     "CsTenantDialPlan",
+		script:   "tenant_dial_plan.ps1",
+		description: "Manages a tenant dial plan, whose normalization rules translate the numbers users dial, such as " +
+			"extensions and short numbers, into E.164 numbers",
+		fields: []field{
+			stringAttr("description", "Description", "Description of the dial plan."),
+			stringAttr("simple_name", "SimpleName", "Name of the dial plan shown in the clients. Defaults to the name."),
+			blockListAttr("normalization_rules", "NormalizationRules", "Normalization rules, in the order Teams tries them: the "+
+				"first rule whose pattern matches the dialed number translates it.",
+				requiredString("name", "Name", "Name of the rule, unique in the dial plan."),
+				requiredString("pattern", "Pattern", "Regular expression the dialed number must match, for example `^(\\d{4})$`."),
+				requiredString("translation", "Translation", "Number to call, with `$1`, `$2`... for the groups of the pattern, for "+
+					"example `+3314567$1`."),
+				stringAttr("description", "Description", "Description of the rule."),
+				boolAttr("is_internal_extension", "IsInternalExtension", "Whether the rule translates an internal extension."),
+			),
+		},
+	},
+	{
+		typeName: "online_voice_route",
+		noun:     "CsOnlineVoiceRoute",
+		noGlobal: true,
+		description: "Manages a Direct Routing voice route: the called numbers it matches, the PSTN usages it belongs to and the " +
+			"session border controllers (SBC) that carry the calls",
+		fields: []field{
+			stringAttr("description", "Description", "Description of the route."),
+			stringAttr("number_pattern", "NumberPattern", "Regular expression of the called numbers, for example `^\\+33\\d{9}$`."),
+			int64Attr("priority", "Priority", "Position of the route in the tenant's list of voice routes, 0 first: the first "+
+				"route of a PSTN usage that matches the number takes the call. Teams keeps the positions consecutive: a value past "+
+				"the last route makes it the last one, and removing a route moves the next ones up. Manage all the routes in the "+
+				"same configuration."),
+			listAttr("online_pstn_usages", "OnlinePstnUsages", "PSTN usages the route belongs to."),
+			listAttr("online_pstn_gateways", "OnlinePstnGatewayList", "FQDNs of the session border controllers (SBC) of the route, "+
+				"as registered with `New-CsOnlinePSTNGateway`."),
+		},
+	},
+	{
+		typeName: "online_voice_routing_policy",
+		noun:     "CsOnlineVoiceRoutingPolicy",
+		description: "Manages a Direct Routing voice routing policy: the PSTN usages, in order, whose voice routes the calls of " +
+			"its users can take",
+		fields: []field{
+			stringAttr("description", "Description", "Description of the policy."),
+			listAttr("online_pstn_usages", "OnlinePstnUsages", "PSTN usages, in the order Teams tries their voice routes."),
+		},
+	},
+	{
+		typeName:    "emergency_calling_policy",
+		noun:        "CsTeamsEmergencyCallingPolicy",
+		description: "Manages a Teams emergency calling policy, which notifies security staff when a user calls an emergency number",
+		validate:    validateEmergencyCallingPolicy,
+		fields: []field{
+			stringAttr("description", "Description", "Description of the policy."),
+			enumAttr("notification_mode", "NotificationMode", "How the notified people take part in the emergency call.",
+				"NotificationOnly", "ConferenceMuted", "ConferenceUnMuted"),
+			stringAttr("notification_group", "NotificationGroup", "Email addresses of the users and groups to notify, separated by "+
+				"semicolons. Required with `NotificationOnly`."),
+			stringAttr("notification_dial_out_number", "NotificationDialOutNumber", "Phone number called to join the emergency call, "+
+				"with `ConferenceMuted` or `ConferenceUnMuted`."),
+			enumAttr("external_location_lookup_mode", "ExternalLocationLookupMode", "Whether users working from home can set their "+
+				"emergency address.", "Enabled", "Disabled"),
+			stringAttr("enhanced_emergency_service_disclaimer", "EnhancedEmergencyServiceDisclaimer", "Text shown to users who have "+
+				"not confirmed their emergency address."),
+		},
+	},
+	{
+		typeName: "emergency_call_routing_policy",
+		noun:     "CsTeamsEmergencyCallRoutingPolicy",
+		script:   "emergency_call_routing_policy.ps1",
+		description: "Manages a Teams emergency call routing policy: the emergency numbers of Direct Routing users and the PSTN " +
+			"usages that carry their calls",
+		fields: []field{
+			stringAttr("description", "Description", "Description of the policy."),
+			boolAttr("allow_enhanced_emergency_services", "AllowEnhancedEmergencyServices", "Whether dynamic emergency calling "+
+				"(location-based routing of emergency calls) is on."),
+			blockListAttr("emergency_numbers", "EmergencyNumbers", "Emergency numbers.",
+				requiredString("dial_string", "EmergencyDialString", "Emergency number sent to the PSTN, for example `112`."),
+				stringAttr("dial_mask", "EmergencyDialMask", "Other numbers users may dial for it, separated by semicolons, "+
+					"for example `911;999`."),
+				stringAttr("pstn_usage", "OnlinePSTNUsage", "PSTN usage whose voice routes carry the call."),
+			),
+		},
+	},
+	// -----------------------------------------------------------------------
 	// Tenant-wide configurations
 	// -----------------------------------------------------------------------
 	{
@@ -297,3 +393,15 @@ var (
 	portValidator      = int64validator.Between(1024, 65535)
 	portRangeValidator = int64validator.Between(1, 64511)
 )
+
+// validateEmergencyCallingPolicy checks what Teams only refuses at apply time.
+func validateEmergencyCallingPolicy(cfg map[string]attr.Value, diags *diag.Diagnostics) {
+	mode, ok := cfg["notification_mode"].(types.String)
+	if !ok || mode.IsNull() || mode.IsUnknown() || !strings.EqualFold(mode.ValueString(), "NotificationOnly") {
+		return
+	}
+	if group, _ := cfg["notification_group"].(types.String); group.IsNull() {
+		diags.AddAttributeError(path.Root("notification_group"), "Missing notification group",
+			"notification_mode \"NotificationOnly\" needs notification_group: the people to notify.")
+	}
+}
