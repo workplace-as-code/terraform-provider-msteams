@@ -37,7 +37,7 @@ output "global_online_pstn_usages" {
 
 ## Permissions
 
-The provider's app registration needs the **Teams Administrator** Entra ID role; the read-only Teams Reader role may not cover the voice cmdlets. See the [Authentication guide](https://registry.terraform.io/providers/workplace-as-code/msteams/latest/docs/guides/authentication).
+The provider's app registration needs the **Teams Reader** Entra ID role, or Teams Administrator. See the [Authentication guide](https://registry.terraform.io/providers/workplace-as-code/msteams/latest/docs/guides/authentication).
 
 ## Microsoft documentation
 
