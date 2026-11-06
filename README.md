@@ -6,6 +6,12 @@ Manage Microsoft Teams policies and tenant-wide settings as code with Terraform.
 [![Terraform Registry](https://img.shields.io/github/v/release/workplace-as-code/terraform-provider-msteams?label=registry&logo=terraform&color=7B42BC)](https://registry.terraform.io/providers/workplace-as-code/msteams/latest)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
+> [!IMPORTANT]
+> **No longer maintained.** This repository is archived: no new features or fixes are planned. The released
+> versions stay available on the Terraform Registry. Work now focuses on the Exchange providers:
+> [msexchangeonline](https://github.com/workplace-as-code/terraform-provider-msexchangeonline) and
+> [msexchangeserver](https://github.com/workplace-as-code/terraform-provider-msexchangeserver).
+
 > [!WARNING]
 > **Use at your own risk.** This is a community project, maintained on a best-effort basis and provided as is, without warranty (MIT license). Each release is tested by hand on a test tenant before it is published; nothing is tested continuously against Microsoft 365. Run `terraform plan` and try your configuration on a non-production tenant before applying it to production.
 
